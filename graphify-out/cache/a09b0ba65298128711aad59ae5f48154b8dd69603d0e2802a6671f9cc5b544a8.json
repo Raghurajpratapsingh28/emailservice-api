@@ -1,0 +1,1 @@
+{"nodes": [{"id": "src_shared_types_index_ts", "label": "index.ts", "file_type": "code", "source_file": "src/shared/types/index.ts", "source_location": "L1"}], "edges": [{"source": "src_shared_types_index_ts", "target": "rbac_js", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "src/shared/types/index.ts", "source_location": "L1", "weight": 1.0}]}
