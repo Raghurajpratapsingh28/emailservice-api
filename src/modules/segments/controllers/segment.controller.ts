@@ -1,9 +1,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ForbiddenError, UnauthorizedError } from '@shared/errors/app-errors.js';
 import {
+  addContactToSegmentBodySchema,
   createSegmentBodySchema,
   listSegmentsQuerySchema,
   previewSegmentQuerySchema,
+  segmentContactParamSchema,
   segmentIdParamSchema,
   updateSegmentBodySchema,
 } from '../schemas/segment.schema.js';
@@ -72,5 +74,20 @@ export const segmentController = {
     const { limit } = previewSegmentQuerySchema.parse(req.query);
     const result = await req.server.services.segments.previewSegment(workspaceId(req), id, limit);
     return reply.status(200).send(result);
+  },
+
+  // POST /api/v1/segments/:id/contacts
+  async addContact(req: FastifyRequest, reply: FastifyReply) {
+    const { id } = segmentIdParamSchema.parse(req.params);
+    const { contactId } = addContactToSegmentBodySchema.parse(req.body);
+    await req.server.services.segments.addContactToSegment(workspaceId(req), id, contactId, actorCtx(req));
+    return reply.status(204).send();
+  },
+
+  // DELETE /api/v1/segments/:id/contacts/:contactId
+  async removeContact(req: FastifyRequest, reply: FastifyReply) {
+    const { id, contactId } = segmentContactParamSchema.parse(req.params);
+    await req.server.services.segments.removeContactFromSegment(workspaceId(req), id, contactId, actorCtx(req));
+    return reply.status(204).send();
   },
 };

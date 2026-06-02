@@ -41,6 +41,8 @@ export type AuditAction =
   | 'segment.created'
   | 'segment.updated'
   | 'segment.deleted'
+  | 'segment.contact_added'
+  | 'segment.contact_removed'
   | 'workflow.created'
   | 'workflow.updated'
   | 'workflow.published'

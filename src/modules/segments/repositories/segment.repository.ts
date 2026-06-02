@@ -119,6 +119,44 @@ export class SegmentRepository {
     return Number(rows[0]?.c ?? 0);
   }
 
+  public async addMember(workspaceId: string, segmentId: string, contactId: string): Promise<boolean> {
+    const rows = await this.db
+      .insert(segmentMemberships)
+      .values({ workspaceId, segmentId, contactId })
+      .onConflictDoNothing()
+      .returning();
+    return rows.length > 0;
+  }
+
+  public async removeMember(workspaceId: string, segmentId: string, contactId: string): Promise<boolean> {
+    const rows = await this.db
+      .delete(segmentMemberships)
+      .where(
+        and(
+          eq(segmentMemberships.segmentId, segmentId),
+          eq(segmentMemberships.contactId, contactId),
+          eq(segmentMemberships.workspaceId, workspaceId),
+        ),
+      )
+      .returning();
+    return rows.length > 0;
+  }
+
+  public async isMember(workspaceId: string, segmentId: string, contactId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: segmentMemberships.id })
+      .from(segmentMemberships)
+      .where(
+        and(
+          eq(segmentMemberships.segmentId, segmentId),
+          eq(segmentMemberships.contactId, contactId),
+          eq(segmentMemberships.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
   public async getContactSegmentSummary(
     workspaceId: string,
     contactId: string,

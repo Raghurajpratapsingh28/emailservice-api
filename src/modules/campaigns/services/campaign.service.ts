@@ -326,7 +326,7 @@ export class CampaignService {
     const updated = await this.repo.transitionStatus(
       workspaceId,
       campaignId,
-      ['draft'] as const,
+      ['draft', 'scheduled', 'paused'] as const,
       'scheduled',
       { scheduledAt },
     );

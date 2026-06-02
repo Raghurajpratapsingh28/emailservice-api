@@ -46,19 +46,22 @@ export class SegmentService {
       });
     }
 
+    const isStatic = (body.type ?? 'static') === 'static';
+
     const segment = await this.repo.insert({
       workspaceId,
       name: body.name,
       type: body.type ?? 'static',
       filterTree: (body.filterTree ?? {}) as Record<string, unknown>,
-      status: 'pending',
+      status: isStatic ? 'ready' : 'pending',
+      lastComputed: isStatic ? new Date() : undefined,
       createdBy: actor.user.id,
     });
 
     segmentsCreated.inc({ workspace_id: workspaceId, type: segment.type });
     this.log.info({ segmentId: segment.id, workspaceId, type: segment.type }, 'segment created');
 
-    this.enqueueRefresh(workspaceId, segment.id);
+    if (!isStatic) this.enqueueRefresh(workspaceId, segment.id);
 
     await this.audit.record({
       action: 'segment.created',
@@ -87,16 +90,19 @@ export class SegmentService {
     if (body.type !== undefined) patch.type = body.type;
     if (body.filterTree !== undefined) patch.filterTree = body.filterTree as Record<string, unknown>;
 
+    const effectiveType = patch.type ?? existing.type;
+    const isStatic = effectiveType === 'static';
+
     const updated = await this.repo.update(workspaceId, id, {
       ...patch,
-      status: 'pending',
+      status: isStatic ? 'ready' : 'pending',
     });
     if (!updated) throw new NotFoundError('Segment not found', 'SEGMENT_NOT_FOUND');
 
     segmentsUpdated.inc({ workspace_id: workspaceId });
     this.log.info({ segmentId: id, workspaceId }, 'segment updated');
 
-    this.enqueueRefresh(workspaceId, id);
+    if (!isStatic) this.enqueueRefresh(workspaceId, id);
 
     await this.audit.record({
       action: 'segment.updated',
@@ -173,6 +179,64 @@ export class SegmentService {
       contacts: rows.map((r) => r.contact),
       total: segment.contactCount,
     };
+  }
+
+  public async addContactToSegment(
+    workspaceId: string,
+    segmentId: string,
+    contactId: string,
+    actor: ActorContext,
+  ): Promise<void> {
+    const segment = await this.repo.findById(workspaceId, segmentId);
+    if (!segment) throw new NotFoundError('Segment not found', 'SEGMENT_NOT_FOUND');
+    if (segment.type !== 'static') {
+      throw new ValidationError('Cannot manually add contacts to a dynamic segment', { field: 'segmentId' });
+    }
+
+    await this.repo.addMember(workspaceId, segmentId, contactId);
+
+    const newCount = await this.repo.getMembershipCount(segmentId);
+    await this.repo.update(workspaceId, segmentId, { contactCount: newCount, status: 'ready', lastComputed: new Date() });
+
+    this.log.info({ segmentId, contactId, workspaceId }, 'contact added to static segment');
+    await this.audit.record({
+      action: 'segment.contact_added',
+      actorUserId: actor.user.id,
+      workspaceId,
+      targetType: 'segment',
+      targetId: segmentId,
+      ipAddress: actor.ipAddress,
+      success: true,
+    }).catch(() => undefined);
+  }
+
+  public async removeContactFromSegment(
+    workspaceId: string,
+    segmentId: string,
+    contactId: string,
+    actor: ActorContext,
+  ): Promise<void> {
+    const segment = await this.repo.findById(workspaceId, segmentId);
+    if (!segment) throw new NotFoundError('Segment not found', 'SEGMENT_NOT_FOUND');
+    if (segment.type !== 'static') {
+      throw new ValidationError('Cannot manually remove contacts from a dynamic segment', { field: 'segmentId' });
+    }
+
+    await this.repo.removeMember(workspaceId, segmentId, contactId);
+
+    const newCount = await this.repo.getMembershipCount(segmentId);
+    await this.repo.update(workspaceId, segmentId, { contactCount: newCount });
+
+    this.log.info({ segmentId, contactId, workspaceId }, 'contact removed from static segment');
+    await this.audit.record({
+      action: 'segment.contact_removed',
+      actorUserId: actor.user.id,
+      workspaceId,
+      targetType: 'segment',
+      targetId: segmentId,
+      ipAddress: actor.ipAddress,
+      success: true,
+    }).catch(() => undefined);
   }
 
   private enqueueRefresh(workspaceId: string, segmentId: string): void {

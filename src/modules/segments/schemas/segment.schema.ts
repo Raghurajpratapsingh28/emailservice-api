@@ -51,6 +51,16 @@ export const previewSegmentQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const segmentContactParamSchema = z.object({
+  id: z.string().uuid(),
+  contactId: z.string().uuid(),
+});
+
+export const addContactToSegmentBodySchema = z.object({
+  contactId: z.string().uuid(),
+});
+
 export type CreateSegmentBody = z.infer<typeof createSegmentBodySchema>;
 export type UpdateSegmentBody = z.infer<typeof updateSegmentBodySchema>;
 export type ListSegmentsQuery = z.infer<typeof listSegmentsQuerySchema>;
+export type AddContactToSegmentBody = z.infer<typeof addContactToSegmentBodySchema>;

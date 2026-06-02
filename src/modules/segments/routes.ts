@@ -14,4 +14,6 @@ export default async function segmentRoutes(app: FastifyInstance): Promise<void>
   app.delete('/:id', { preHandler: write, schema: { tags: ['segments'], summary: 'Delete segment', security: [{ bearerAuth: [] }] } }, segmentController.remove);
   app.post('/:id/refresh', { preHandler: write, schema: { tags: ['segments'], summary: 'Trigger segment refresh', security: [{ bearerAuth: [] }] } }, segmentController.refresh);
   app.get('/:id/preview', { preHandler: read, schema: { tags: ['segments'], summary: 'Preview segment contacts', security: [{ bearerAuth: [] }] } }, segmentController.preview);
+  app.post('/:id/contacts', { preHandler: write, schema: { tags: ['segments'], summary: 'Add contact to static segment', security: [{ bearerAuth: [] }] } }, segmentController.addContact);
+  app.delete('/:id/contacts/:contactId', { preHandler: write, schema: { tags: ['segments'], summary: 'Remove contact from static segment', security: [{ bearerAuth: [] }] } }, segmentController.removeContact);
 }
