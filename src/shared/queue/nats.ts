@@ -1,18 +1,12 @@
-import { connect, JSONCodec, type NatsConnection } from 'nats';
+import { connect, JSONCodec, type NatsConnection, type JetStreamClient } from 'nats';
 import { config } from '@config/index.js';
-
-/**
- * NATS connection factory. Lifetime is owned by `nats.plugin`.
- *
- * We use a JSON codec for application-level events. Subjects live in
- * `src/constants/nats-subjects.ts`.
- */
 
 const codec = JSONCodec();
 
 export interface NatsClient {
   connection: NatsConnection;
-  publish: <T = unknown>(subject: string, payload: T) => void;
+  js: JetStreamClient;
+  publish: <T = unknown>(subject: string, payload: T) => Promise<void>;
   request: <Req = unknown, Res = unknown>(
     subject: string,
     payload: Req,
@@ -30,10 +24,13 @@ export async function createNats(): Promise<NatsClient> {
     reconnectTimeWait: 1000,
   });
 
+  const js = connection.jetstream();
+
   return {
     connection,
-    publish<T = unknown>(subject: string, payload: T): void {
-      connection.publish(subject, codec.encode(payload));
+    js,
+    async publish<T = unknown>(subject: string, payload: T): Promise<void> {
+      await js.publish(subject, codec.encode(payload));
     },
     async request<Req = unknown, Res = unknown>(
       subject: string,

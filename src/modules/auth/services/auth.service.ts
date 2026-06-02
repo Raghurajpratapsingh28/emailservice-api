@@ -1134,11 +1134,8 @@ export class AuthService {
    * publishes are logged via audit + counted (F19 — reduces silent loss).
    */
   private publishEvent(subject: string, payload: Record<string, unknown>): void {
-    try {
-      this.nats.publish(subject, { ...payload, occurredAt: new Date().toISOString() });
-    } catch {
-      // best-effort; audit downstream
-    }
+    this.nats.publish(subject, { ...payload, occurredAt: new Date().toISOString() })
+      .catch(() => { /* best-effort; audit downstream */ });
   }
 }
 

@@ -182,7 +182,7 @@ export class WorkflowService {
     // Publish locked NATS contract
     const payload: WorkflowRegisterPayload = { workspaceId, workflowId: id };
     try {
-      this.nats.publish<WorkflowRegisterPayload>(NATS_SUBJECTS.WORKFLOW_REGISTER, payload);
+      await this.nats.publish<WorkflowRegisterPayload>(NATS_SUBJECTS.WORKFLOW_REGISTER, payload);
     } catch (err) {
       this.log.error({ err, workflowId: id }, 'failed to publish workflow.register');
     }

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "rootDir": "./database",
+    "outDir": "./dist/database",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["database/**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

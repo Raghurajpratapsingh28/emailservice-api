@@ -32,7 +32,7 @@ export const NATS_SUBJECTS = {
   DOMAIN_VERIFICATION_FAILED: 'domain.verification_failed.v1',
   DOMAIN_DELETED: 'domain.deleted.v1',
   /** Worker subscribes to this and runs an SES `GetIdentityVerificationAttributes` poll. */
-  DOMAIN_VERIFY_POLL: 'domain.verify.poll.v1',
+  DOMAIN_VERIFY_POLL: 'domain.verify.poll',
 
   /**
    * Locked queue contract for raw event ingestion.

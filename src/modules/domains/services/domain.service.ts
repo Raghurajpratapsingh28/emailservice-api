@@ -385,11 +385,8 @@ export class DomainService {
   }
 
   private publishEvent(subject: string, payload: Record<string, unknown>): void {
-    try {
-      this.nats.publish(subject, { ...payload, occurredAt: new Date().toISOString() });
-      domainsQueuePublishesTotal.inc({ subject });
-    } catch (err) {
-      this.logger.warn({ err, subject }, '[domains] NATS publish failed');
-    }
+    this.nats.publish(subject, { ...payload, occurredAt: new Date().toISOString() })
+      .then(() => domainsQueuePublishesTotal.inc({ subject }))
+      .catch((err) => this.logger.warn({ err, subject }, '[domains] NATS publish failed'));
   }
 }

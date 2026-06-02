@@ -434,7 +434,7 @@ export class CampaignService {
     };
 
     try {
-      this.nats.publish(NATS_SUBJECTS.CAMPAIGN_SEND_START, payload);
+      await this.nats.publish(NATS_SUBJECTS.CAMPAIGN_SEND_START, payload);
     } catch (err) {
       // Roll back the status to its previous value to keep the user able to retry.
       this.logger.error(
@@ -587,7 +587,7 @@ export class CampaignService {
           ...(updated.htmlBody ? { html: updated.htmlBody } : {}),
           ...(updated.textBody ? { text: updated.textBody } : {}),
         };
-        this.nats.publish(NATS_SUBJECTS.CAMPAIGN_SEND_START, payload);
+        await this.nats.publish(NATS_SUBJECTS.CAMPAIGN_SEND_START, payload);
       } catch (err) {
         this.logger.warn(
           { err, workspaceId, campaignId },

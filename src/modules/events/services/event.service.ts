@@ -397,7 +397,7 @@ export class EventService {
     };
 
     try {
-      this.nats.publish(eventsRawSubject(key.workspaceId), payload);
+      await this.nats.publish(eventsRawSubject(key.workspaceId), payload);
     } catch (err) {
       eventsQueueFailures.inc();
       this.logger.error(

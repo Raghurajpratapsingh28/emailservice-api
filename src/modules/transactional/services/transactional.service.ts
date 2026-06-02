@@ -193,7 +193,7 @@ export class TransactionalService {
 
     // 1f. Publish — with rollback on failure
     try {
-      this.nats.publish(NATS_SUBJECTS.EMAIL_SEND_TRANSACTIONAL, payload);
+      await this.nats.publish(NATS_SUBJECTS.EMAIL_SEND_TRANSACTIONAL, payload);
     } catch (err) {
       emailsQueuePublishFailures.inc();
       this.logger.error(

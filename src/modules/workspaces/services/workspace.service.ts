@@ -709,10 +709,7 @@ export class WorkspaceService {
   }
 
   private publishEvent(subject: string, payload: Record<string, unknown>): void {
-    try {
-      this.nats.publish(subject, { ...payload, occurredAt: new Date().toISOString() });
-    } catch {
-      // best-effort
-    }
+    this.nats.publish(subject, { ...payload, occurredAt: new Date().toISOString() })
+      .catch(() => { /* best-effort */ });
   }
 }

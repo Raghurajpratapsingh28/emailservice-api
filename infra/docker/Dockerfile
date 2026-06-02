@@ -7,6 +7,8 @@ RUN npm ci --ignore-scripts
 
 COPY tsconfig*.json ./
 COPY src ./src
+COPY database ./database
+COPY scripts ./scripts
 
 RUN npm run build
 
@@ -18,10 +20,12 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force && npm install --no-save tsx
 
 COPY --from=builder /app/dist ./dist
 COPY database ./database
+COPY src ./src
+COPY tsconfig*.json ./
 
 RUN addgroup -S app && adduser -S app -G app
 USER app
