@@ -31,6 +31,8 @@ import { BillingRepository } from '@modules/billing/repositories/billing.reposit
 import { BillingService } from '@modules/billing/services/billing.service.js';
 import { StripeWebhookHandler } from '@modules/billing/stripe-webhook.handler.js';
 import { createStripeClient, createStripeStub } from '@shared/payments/stripe.js';
+import { ApiKeyRepository } from '@modules/api-keys/repositories/api-key.repository.js';
+import { ApiKeyService } from '@modules/api-keys/services/api-key.service.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -51,6 +53,7 @@ declare module 'fastify' {
       workflows: WorkflowService;
       billing: BillingService;
       stripeWebhook: StripeWebhookHandler;
+      apiKeys: ApiKeyService;
     };
   }
 }
@@ -137,6 +140,9 @@ export default fp(
       stripeWebhook = new StripeWebhookHandler(billingRepo, billing, stub, app.redis, audit, app.log);
     }
 
+    const apiKeyRepo = new ApiKeyRepository(app.db);
+    const apiKeys = new ApiKeyService(apiKeyRepo, audit, app.log);
+
     const subscriber = app.redis.duplicate();
     await rbac.startInvalidationListener(subscriber);
 
@@ -157,6 +163,7 @@ export default fp(
       workflows,
       billing,
       stripeWebhook,
+      apiKeys,
     });
 
     app.addHook('onClose', async () => {

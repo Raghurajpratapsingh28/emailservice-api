@@ -58,7 +58,9 @@ export type AuditAction =
   | 'billing.invoice.synced'
   | 'billing.webhook.received'
   | 'billing.webhook.replay_blocked'
-  | 'billing.payment.failed';
+  | 'billing.payment.failed'
+  | 'api_key.created'
+  | 'api_key.revoked';
 
 export interface AuditEntry {
   action: AuditAction;

@@ -9,6 +9,7 @@ import contactRoutes from '@modules/contacts/routes.js';
 import segmentRoutes from '@modules/segments/routes.js';
 import workflowRoutes from '@modules/workflows/routes.js';
 import billingRoutes, { stripeWebhookRoutes } from '@modules/billing/routes.js';
+import apiKeyRoutes from '@modules/api-keys/routes.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -47,6 +48,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await api.register(workflowRoutes, { prefix: '/workflows' });
       await api.register(billingRoutes, { prefix: '/billing' });
       await api.register(stripeWebhookRoutes, { prefix: '/webhooks' });
+      await api.register(apiKeyRoutes, { prefix: '/api-keys' });
     },
     { prefix: '/api/v1' },
   );
