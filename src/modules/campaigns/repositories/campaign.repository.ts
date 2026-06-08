@@ -260,6 +260,22 @@ export class CampaignRepository {
     return rows[0] ?? null;
   }
 
+  public async countSentThisMonth(workspaceId: string): Promise<number> {
+    const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    const rows = await this.db
+      .select({ c: count() })
+      .from(campaigns)
+      .where(
+        and(
+          eq(campaigns.workspaceId, workspaceId),
+          isNull(campaigns.deletedAt),
+          sql`${campaigns.status} IN ('sent', 'sending')`,
+          gte(campaigns.startedAt, monthStart),
+        ),
+      );
+    return Number(rows[0]?.c ?? 0);
+  }
+
   // ─── Segment lookup ───────────────────────────────────────────────────────
 
   /**

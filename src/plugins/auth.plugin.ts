@@ -86,40 +86,12 @@ export default fp(
     const tokens = new TokenService(app.db, jtiDenylist);
     const audit = new AuditService(app.db, app.log);
     const rbac = new RbacService(app.db, app.redis);
-    const auth = new AuthService(app.db, tokens, passwords, audit, rbac, app.nats, app.email);
 
     const workspaceRepo = new WorkspaceRepository(app.db);
     const workspaces = new WorkspaceService(app.db, workspaceRepo, rbac, audit, tokens, app.nats);
 
-    const domainRepo = new DomainRepository(app.db);
-    const sesIdentity = createSesIdentityClient();
-    const domains = new DomainService(app.db, domainRepo, sesIdentity, audit, app.nats, app.log);
-
     const idempotency = createIdempotencyCache(app.redis);
     const transactionalRepo = new TransactionalRepository(app.db);
-    const transactional = new TransactionalService(
-      app.db,
-      transactionalRepo,
-      idempotency,
-      app.nats,
-      audit,
-      app.log,
-    );
-
-    const campaignRepo = new CampaignRepository(app.db);
-    const campaigns = new CampaignService(app.db, campaignRepo, app.nats, audit, app.log);
-
-    const eventRepo = new EventRepository(app.db);
-    const events = new EventService(app.db, eventRepo, app.redis, app.nats, app.log);
-
-    const contactRepo = new ContactRepository(app.db);
-    const contacts = new ContactService(app.db, contactRepo, audit, app.log);
-
-    const segmentRepo = new SegmentRepository(app.db);
-    const segments = new SegmentService(segmentRepo, app.nats, audit, app.log);
-
-    const workflowRepo = new WorkflowRepository(app.db);
-    const workflows = new WorkflowService(workflowRepo, app.nats, app.redis, audit, app.log);
 
     // ─── Billing ─────────────────────────────────────────────────────────
     // The Stripe client is constructed lazily; it throws if STRIPE_SECRET_KEY
@@ -131,17 +103,48 @@ export default fp(
     if (config.STRIPE_SECRET_KEY) {
       const stripeClient = createStripeClient();
       billing = new BillingService(app.db, billingRepo, stripeClient, app.redis, audit, app.log);
-      stripeWebhook = new StripeWebhookHandler(billingRepo, billing, stripeClient, app.redis, audit, app.log);
+      stripeWebhook = new StripeWebhookHandler(app.db, billingRepo, billing, stripeClient, app.redis, audit, app.log);
     } else {
       // Build a service that always throws so tests / dev can still boot the
       // app without Stripe configured — but any billing call will be rejected.
       const stub = createStripeStub();
       billing = new BillingService(app.db, billingRepo, stub, app.redis, audit, app.log);
-      stripeWebhook = new StripeWebhookHandler(billingRepo, billing, stub, app.redis, audit, app.log);
+      stripeWebhook = new StripeWebhookHandler(app.db, billingRepo, billing, stub, app.redis, audit, app.log);
     }
 
+    const domainRepo = new DomainRepository(app.db);
+    const sesIdentity = createSesIdentityClient();
+    const domains = new DomainService(app.db, domainRepo, sesIdentity, audit, app.nats, app.log, billing);
+
+    const auth = new AuthService(app.db, tokens, passwords, audit, rbac, app.nats, app.email, billing);
+
+    const transactional = new TransactionalService(
+      app.db,
+      transactionalRepo,
+      idempotency,
+      app.nats,
+      audit,
+      app.log,
+      billing,
+    );
+
+    const campaignRepo = new CampaignRepository(app.db);
+    const campaigns = new CampaignService(app.db, campaignRepo, app.nats, audit, app.log, billing);
+
+    const eventRepo = new EventRepository(app.db);
+    const events = new EventService(app.db, eventRepo, app.redis, app.nats, app.log, billing);
+
+    const contactRepo = new ContactRepository(app.db);
+    const contacts = new ContactService(app.db, contactRepo, audit, app.log, billing);
+
+    const segmentRepo = new SegmentRepository(app.db);
+    const segments = new SegmentService(segmentRepo, app.nats, audit, app.log, billing);
+
+    const workflowRepo = new WorkflowRepository(app.db);
+    const workflows = new WorkflowService(workflowRepo, app.nats, app.redis, audit, app.log, billing);
+
     const apiKeyRepo = new ApiKeyRepository(app.db);
-    const apiKeys = new ApiKeyService(apiKeyRepo, audit, app.log);
+    const apiKeys = new ApiKeyService(apiKeyRepo, audit, app.log, billing);
 
     const subscriber = app.redis.duplicate();
     await rbac.startInvalidationListener(subscriber);

@@ -30,6 +30,7 @@ import type {
   ListInvoicesQuery,
 } from '../schemas/billing.schema.js';
 import {
+  billingActiveSubscriptions,
   billingCheckoutSessions,
   billingPlanDowngrades,
   billingPlanUpgrades,
@@ -437,7 +438,7 @@ export class BillingService {
     const plan = (stripeSub.metadata?.plan as BillingPlan | undefined) ?? 'free';
     const interval = stripeSub.metadata?.billingInterval as BillingInterval | undefined ?? null;
 
-    return this.repo.upsertSubscription({
+    const result = await this.repo.upsertSubscription({
       workspaceId,
       stripeCustomerId: typeof stripeSub.customer === 'string' ? stripeSub.customer : stripeSub.customer.id,
       stripeSubscriptionId: stripeSub.id,
@@ -452,6 +453,8 @@ export class BillingService {
       trialEndsAt: tsToDate(stripeSub.trial_end),
       canceledAt: tsToDate(stripeSub.canceled_at),
     });
+    billingActiveSubscriptions.set({ plan: result.plan }, 1);
+    return result;
   }
 
   /**

@@ -3,9 +3,11 @@ import type { Redis } from '@shared/cache/client.js';
 import type { NatsClient } from '@shared/queue/nats.js';
 import type { Paginated } from '@shared/types/index.js';
 import type { Workflow, WorkflowExecution, WorkflowGraph } from '@shared/database/schema/workflows.js';
-import { ConflictError, NotFoundError, ValidationError } from '@shared/errors/app-errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@shared/errors/app-errors.js';
 import { NATS_SUBJECTS } from '@constants/nats-subjects.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
+import { resourceLimitsForPlan } from '@constants/plan-limits.js';
 import type { WorkflowRepository } from '../repositories/workflow.repository.js';
 import type { CreateWorkflowBody, ListWorkflowsQuery, UpdateWorkflowBody } from '../schemas/workflow.schema.js';
 import { validateGraph } from '../validators/graph-validator.js';
@@ -35,6 +37,7 @@ export class WorkflowService {
     private readonly redis: Redis,
     private readonly audit: AuditService,
     private readonly log: FastifyBaseLogger,
+    private readonly billing: BillingService,
   ) {}
 
   public async createWorkflow(
@@ -48,6 +51,18 @@ export class WorkflowService {
     } catch (err) {
       workflowValidationFailures.inc({ workspace_id: workspaceId });
       throw err;
+    }
+
+    const sub = await this.billing.getSubscription(workspaceId);
+    const limits = resourceLimitsForPlan(sub.plan);
+    if (Number.isFinite(limits.maxWorkflows)) {
+      const workflowCount = await this.repo.countByWorkspace(workspaceId);
+      if (workflowCount >= limits.maxWorkflows) {
+        throw new ForbiddenError(
+          `Workflow limit (${limits.maxWorkflows}) reached for your plan`,
+          'QUOTA_EXCEEDED',
+        );
+      }
     }
 
     const graph = body.graph as unknown as Record<string, unknown>;

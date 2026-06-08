@@ -11,6 +11,7 @@ import { workspaces } from '@shared/database/schema/workspaces.js';
 import type { Database } from '@shared/database/client.js';
 import type { Redis } from '@shared/cache/client.js';
 import type { NatsClient } from '@shared/queue/nats.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
 import type {
   AliasBody,
   GroupBody,
@@ -89,6 +90,7 @@ export class EventService {
       warn: (...a: unknown[]) => void;
       error: (...a: unknown[]) => void;
     },
+    private readonly billing: BillingService,
   ) {}
 
   // ─── Write-key auth ───────────────────────────────────────────────────────
@@ -195,6 +197,9 @@ export class EventService {
     ip: string,
   ): Promise<IngestResult> {
     await this.enforceRateLimit(key.workspaceId, key.id, ip, key.rateLimit);
+    if (!await this.billing.hasQuotaRemaining(key.workspaceId, 'events', 1)) {
+      throw new ForbiddenError('Event quota exceeded', 'QUOTA_EXCEEDED');
+    }
     return this.ingest(key, {
       eventType: 'track',
       eventName: body.event,
@@ -216,6 +221,9 @@ export class EventService {
     ip: string,
   ): Promise<IngestResult> {
     await this.enforceRateLimit(key.workspaceId, key.id, ip, key.rateLimit);
+    if (!await this.billing.hasQuotaRemaining(key.workspaceId, 'events', 1)) {
+      throw new ForbiddenError('Event quota exceeded', 'QUOTA_EXCEEDED');
+    }
     return this.ingest(key, {
       eventType: 'identify',
       eventName: null,
@@ -237,6 +245,9 @@ export class EventService {
     ip: string,
   ): Promise<IngestResult> {
     await this.enforceRateLimit(key.workspaceId, key.id, ip, key.rateLimit);
+    if (!await this.billing.hasQuotaRemaining(key.workspaceId, 'events', 1)) {
+      throw new ForbiddenError('Event quota exceeded', 'QUOTA_EXCEEDED');
+    }
     return this.ingest(key, {
       eventType: 'page',
       eventName: 'Page Viewed',
@@ -258,6 +269,9 @@ export class EventService {
     ip: string,
   ): Promise<IngestResult> {
     await this.enforceRateLimit(key.workspaceId, key.id, ip, key.rateLimit);
+    if (!await this.billing.hasQuotaRemaining(key.workspaceId, 'events', 1)) {
+      throw new ForbiddenError('Event quota exceeded', 'QUOTA_EXCEEDED');
+    }
     return this.ingest(key, {
       eventType: 'group',
       eventName: null,
@@ -279,6 +293,9 @@ export class EventService {
     ip: string,
   ): Promise<IngestResult> {
     await this.enforceRateLimit(key.workspaceId, key.id, ip, key.rateLimit);
+    if (!await this.billing.hasQuotaRemaining(key.workspaceId, 'events', 1)) {
+      throw new ForbiddenError('Event quota exceeded', 'QUOTA_EXCEEDED');
+    }
     return this.ingest(key, {
       eventType: 'alias',
       eventName: null,
@@ -408,6 +425,7 @@ export class EventService {
       throw new Error('Failed to queue event');
     }
 
+    this.billing.recordUsage(key.workspaceId, 'events', 1).catch(() => undefined);
     eventsAccepted.inc({ event_type: data.eventType });
     this.logger.info(
       { workspaceId: key.workspaceId, eventType: data.eventType, eventId: row.id },

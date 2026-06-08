@@ -77,6 +77,55 @@ export const PLAN_LIMITS = {
 } as const;
 
 export type PlanTier = keyof typeof PLAN_LIMITS;
+
+export const RESOURCE_LIMITS = {
+  free: {
+    maxDomains: 1,
+    maxSegments: 3,
+    maxWorkflows: 1,
+    maxApiKeys: 2,
+    maxEmailTemplates: 5,
+  },
+  starter: {
+    maxDomains: 3,
+    maxSegments: 20,
+    maxWorkflows: 5,
+    maxApiKeys: 5,
+    maxEmailTemplates: 20,
+  },
+  growth: {
+    maxDomains: 10,
+    maxSegments: 100,
+    maxWorkflows: 20,
+    maxApiKeys: 20,
+    maxEmailTemplates: 100,
+  },
+  pro: {
+    maxDomains: Number.POSITIVE_INFINITY,
+    maxSegments: Number.POSITIVE_INFINITY,
+    maxWorkflows: Number.POSITIVE_INFINITY,
+    maxApiKeys: Number.POSITIVE_INFINITY,
+    maxEmailTemplates: Number.POSITIVE_INFINITY,
+  },
+  enterprise: {
+    maxDomains: Number.POSITIVE_INFINITY,
+    maxSegments: Number.POSITIVE_INFINITY,
+    maxWorkflows: Number.POSITIVE_INFINITY,
+    maxApiKeys: Number.POSITIVE_INFINITY,
+    maxEmailTemplates: Number.POSITIVE_INFINITY,
+  },
+} as const;
+
+export type ResourceLimitKey = keyof typeof RESOURCE_LIMITS['free'];
+
+export type ResourceLimits = typeof RESOURCE_LIMITS[keyof typeof RESOURCE_LIMITS];
+
+export function resourceLimitsForPlan(plan: string): ResourceLimits {
+  if (plan in RESOURCE_LIMITS) {
+    return RESOURCE_LIMITS[plan as keyof typeof RESOURCE_LIMITS];
+  }
+  return RESOURCE_LIMITS.free;
+}
 export const ALL_PLAN_TIERS: readonly PlanTier[] = Object.keys(PLAN_LIMITS) as PlanTier[];
 
 /**

@@ -54,6 +54,14 @@ export class ApiKeyRepository {
     return { items, total: row?.total ?? 0 };
   }
 
+  public async countActiveByWorkspace(workspaceId: string): Promise<number> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(apiKeys)
+      .where(and(eq(apiKeys.workspaceId, workspaceId), isNull(apiKeys.revokedAt), eq(apiKeys.isActive, true)));
+    return Number(rows[0]?.c ?? 0);
+  }
+
   public async revoke(workspaceId: string, id: string): Promise<ApiKey | null> {
     const rows = await this.db
       .update(apiKeys)

@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gt, gte, isNull, sql } from 'drizzle-orm';
 import { config } from '@config/index.js';
 import { ROLE_SLUGS, ROLE_WEIGHT, type RoleSlug } from '@constants/rbac.js';
 import { NATS_SUBJECTS } from '@constants/nats-subjects.js';
@@ -34,6 +34,8 @@ import type { Database } from '@shared/database/client.js';
 import type { TokensResponse } from '@shared/types/index.js';
 import type { EmailPublisher } from '@shared/email/ses.js';
 import type { NatsClient } from '@shared/queue/nats.js';
+import { PLAN_LIMITS } from '@constants/plan-limits.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
 import type { AuditService } from './audit.service.js';
 import type { PasswordService } from './password.service.js';
 import type { RbacService } from './rbac.service.js';
@@ -94,6 +96,7 @@ export class AuthService {
     private readonly rbac: RbacService,
     private readonly nats: NatsClient,
     private readonly email: EmailPublisher,
+    private readonly billing: BillingService,
   ) {}
 
   // ─── Signup ────────────────────────────────────────────────────────────────
@@ -616,6 +619,20 @@ export class AuthService {
         'Cannot invite a user at or above your own role',
         'INVITE_ROLE_TOO_HIGH',
       );
+    }
+
+    const sub = await this.billing.getSubscription(input.workspaceId);
+    const plan = (sub.plan as keyof typeof PLAN_LIMITS) in PLAN_LIMITS
+      ? (sub.plan as keyof typeof PLAN_LIMITS)
+      : 'free';
+    const maxMembers = PLAN_LIMITS[plan].maxMembers;
+    const memberCountRows = await this.db
+      .select({ c: count() })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.workspaceId, input.workspaceId));
+    const memberCount = Number(memberCountRows[0]?.c ?? 0);
+    if (memberCount >= maxMembers) {
+      throw new ForbiddenError('Member limit reached for your plan', 'QUOTA_EXCEEDED');
     }
 
     const roleId = await this.rbac.resolveRoleId(input.role);

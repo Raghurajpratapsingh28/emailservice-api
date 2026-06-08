@@ -148,6 +148,14 @@ export class ContactRepository {
     return rows[0] ?? null;
   }
 
+  public async countByWorkspace(workspaceId: string): Promise<number> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(contacts)
+      .where(and(eq(contacts.workspaceId, workspaceId), isNull(contacts.deletedAt)));
+    return Number(rows[0]?.c ?? 0);
+  }
+
   // ─── Tags ─────────────────────────────────────────────────────────────────
 
   public async getTagsForContact(contactId: string): Promise<string[]> {

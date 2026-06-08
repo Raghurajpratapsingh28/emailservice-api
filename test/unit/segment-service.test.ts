@@ -13,7 +13,16 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
     replaceMemberships: vi.fn(),
     getMembershipCount: vi.fn(),
     getContactSegmentSummary: vi.fn(),
+    countByWorkspace: vi.fn().mockResolvedValue(0),
     ...overrides,
+  };
+}
+
+function makeBilling() {
+  return {
+    getSubscription: vi.fn().mockResolvedValue({ plan: 'pro' }),
+    hasQuotaRemaining: vi.fn().mockResolvedValue(true),
+    recordUsage: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -38,7 +47,7 @@ describe('SegmentService', () => {
       const segment = { id: 'seg-1', workspaceId, name: 'All', type: 'static', status: 'pending' };
       const repo = makeRepo({ insert: vi.fn().mockResolvedValue(segment) });
       const nats = makeNats();
-      const svc = new SegmentService(repo as never, nats as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, nats as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.createSegment(workspaceId, { name: 'All', type: 'static' }, actor);
       expect(result.id).toBe('seg-1');
@@ -47,7 +56,7 @@ describe('SegmentService', () => {
 
     it('throws ValidationError when dynamic segment has no filterTree', async () => {
       const repo = makeRepo();
-      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(
         svc.createSegment(workspaceId, { name: 'X', type: 'dynamic' }, actor),
@@ -58,7 +67,7 @@ describe('SegmentService', () => {
       const segment = { id: 'seg-2', workspaceId, name: 'Trial', type: 'dynamic', status: 'pending' };
       const repo = makeRepo({ insert: vi.fn().mockResolvedValue(segment) });
       const nats = makeNats();
-      const svc = new SegmentService(repo as never, nats as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, nats as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await svc.createSegment(workspaceId, {
         name: 'Trial',
@@ -76,7 +85,7 @@ describe('SegmentService', () => {
   describe('getSegment', () => {
     it('throws SEGMENT_NOT_FOUND when missing', async () => {
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(null) });
-      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.getSegment(workspaceId, 'missing')).rejects.toThrow(NotFoundError);
     });
@@ -85,14 +94,14 @@ describe('SegmentService', () => {
   describe('deleteSegment', () => {
     it('throws SEGMENT_NOT_FOUND when missing', async () => {
       const repo = makeRepo({ softDelete: vi.fn().mockResolvedValue(null) });
-      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.deleteSegment(workspaceId, 'missing', actor)).rejects.toThrow(NotFoundError);
     });
 
     it('soft-deletes successfully', async () => {
       const repo = makeRepo({ softDelete: vi.fn().mockResolvedValue({ id: 'seg-1' }) });
-      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.deleteSegment(workspaceId, 'seg-1', actor)).resolves.toBeUndefined();
     });
@@ -106,7 +115,7 @@ describe('SegmentService', () => {
         update: vi.fn().mockResolvedValue(segment),
       });
       const nats = makeNats();
-      const svc = new SegmentService(repo as never, nats as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, nats as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.refreshSegment(workspaceId, 'seg-1', actor);
       expect(result).toEqual({ queued: true });
@@ -115,7 +124,7 @@ describe('SegmentService', () => {
 
     it('throws SEGMENT_NOT_FOUND when segment missing', async () => {
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(null) });
-      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.refreshSegment(workspaceId, 'missing', actor)).rejects.toThrow(NotFoundError);
     });
@@ -129,7 +138,7 @@ describe('SegmentService', () => {
         findById: vi.fn().mockResolvedValue(segment),
         getPreviewContacts: vi.fn().mockResolvedValue(previewRows),
       });
-      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never);
+      const svc = new SegmentService(repo as never, makeNats() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.previewSegment(workspaceId, 'seg-1', 10);
       expect(result.total).toBe(42);

@@ -20,7 +20,9 @@ import type { Database } from '@shared/database/client.js';
 import type { NatsClient } from '@shared/queue/nats.js';
 import type { AuthenticatedUser } from '@shared/types/index.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
 import type { CampaignRepository } from '../repositories/campaign.repository.js';
+import { PLAN_LIMITS } from '@constants/plan-limits.js';
 import type {
   CreateCampaignBody,
   ListCampaignsQuery,
@@ -99,6 +101,7 @@ export class CampaignService {
       warn: (...a: unknown[]) => void;
       error: (...a: unknown[]) => void;
     },
+    private readonly billing: BillingService,
   ) {}
 
   // ─── 1. Create ─────────────────────────────────────────────────────────────
@@ -397,6 +400,20 @@ export class CampaignService {
       throw new ValidationError('Campaign is missing subject or body');
     }
 
+    const sub = await this.billing.getSubscription(workspaceId);
+    const plan = (sub.plan as keyof typeof PLAN_LIMITS) in PLAN_LIMITS
+      ? (sub.plan as keyof typeof PLAN_LIMITS)
+      : 'free';
+    const maxCampaigns = PLAN_LIMITS[plan].maxCampaignsPerMonth;
+    const sentThisMonth = await this.repo.countSentThisMonth(workspaceId);
+    if (sentThisMonth >= maxCampaigns) {
+      throw new ForbiddenError('Campaign limit reached for your plan', 'QUOTA_EXCEEDED');
+    }
+
+    if (!await this.billing.hasQuotaRemaining(workspaceId, 'emails', segment.contactCount)) {
+      throw new ForbiddenError('Email quota exceeded', 'QUOTA_EXCEEDED');
+    }
+
     // Atomic transition draft|scheduled|paused → sending; only one caller wins.
     const transitioning = await this.repo.transitionStatusWithVersion(
       workspaceId,
@@ -461,6 +478,7 @@ export class CampaignService {
       );
     }
 
+    this.billing.recordUsage(workspaceId, 'emails', segment.contactCount).catch(() => undefined);
     campaignsSentTriggers.inc({ outcome: 'queued' });
     await this.audit.record({
       action: 'workspace.member.added',

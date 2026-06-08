@@ -97,6 +97,14 @@ export class DomainRepository {
     return { items, total: Number(totalRows[0]?.c ?? 0) };
   }
 
+  public async countByWorkspace(workspaceId: string): Promise<number> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(domains)
+      .where(and(eq(domains.workspaceId, workspaceId), isNull(domains.deletedAt)));
+    return Number(rows[0]?.c ?? 0);
+  }
+
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   /**

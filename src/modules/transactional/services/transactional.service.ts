@@ -2,7 +2,6 @@ import { Counter } from 'prom-client';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { NATS_SUBJECTS } from '@constants/nats-subjects.js';
-import { PLAN_LIMITS, type PlanTier } from '@constants/plan-limits.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -11,7 +10,6 @@ import {
   ValidationError,
 } from '@shared/errors/app-errors.js';
 import { domains as domainsTable } from '@shared/database/schema/domains.js';
-import { workspaces as workspacesTable } from '@shared/database/schema/workspaces.js';
 import type { Database } from '@shared/database/client.js';
 import type {
   EmailSend,
@@ -22,6 +20,7 @@ import type {
 import type { NatsClient } from '@shared/queue/nats.js';
 import type { AuthenticatedUser } from '@shared/types/index.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
 import type { IdempotencyCache } from '@shared/cache/idempotency.js';
 import type { TransactionalRepository } from '../repositories/transactional.repository.js';
 import type {
@@ -95,6 +94,7 @@ export class TransactionalService {
       warn: (...a: unknown[]) => void;
       error: (...a: unknown[]) => void;
     },
+    private readonly billing: BillingService,
   ) {}
 
   // ─── 1. Send email ─────────────────────────────────────────────────────────
@@ -194,6 +194,7 @@ export class TransactionalService {
     // 1f. Publish — with rollback on failure
     try {
       await this.nats.publish(NATS_SUBJECTS.EMAIL_SEND_TRANSACTIONAL, payload);
+      await this.billing.recordUsage(workspaceId, 'emails', 1).catch(() => undefined);
     } catch (err) {
       emailsQueuePublishFailures.inc();
       this.logger.error(
@@ -516,25 +517,10 @@ export class TransactionalService {
    * use Forbidden + custom code to keep things simple at this layer).
    */
   private async assertWithinQuota(workspaceId: string): Promise<void> {
-    const wsRows = await this.db
-      .select({ plan: workspacesTable.plan })
-      .from(workspacesTable)
-      .where(eq(workspacesTable.id, workspaceId))
-      .limit(1);
-    const planRaw = wsRows[0]?.plan ?? 'free';
-    const plan = (planRaw in PLAN_LIMITS ? planRaw : 'free') as PlanTier;
-    const limit = PLAN_LIMITS[plan].maxCampaignsPerMonth;
-    if (!Number.isFinite(limit)) return;
-
-    // Calendar-month window
-    const since = new Date();
-    since.setUTCDate(1);
-    since.setUTCHours(0, 0, 0, 0);
-
-    const used = await this.repo.countSendsSince({ workspaceId, since });
-    if (used >= limit) {
+    const allowed = await this.billing.hasQuotaRemaining(workspaceId, 'emails', 1);
+    if (!allowed) {
       throw new ForbiddenError(
-        `Monthly transactional email quota exceeded (${used}/${limit})`,
+        'Monthly email quota exceeded for your plan',
         'EMAIL_QUOTA_EXCEEDED',
       );
     }

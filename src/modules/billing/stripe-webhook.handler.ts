@@ -1,11 +1,14 @@
 import type { FastifyBaseLogger } from 'fastify';
+import { eq } from 'drizzle-orm';
 import type { Redis } from '@shared/cache/client.js';
 import { AppError } from '@shared/errors/app-errors.js';
 import type { StripeClient, Stripe } from '@shared/payments/stripe.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { Database } from '@shared/database/client.js';
 import type { BillingRepository } from './repositories/billing.repository.js';
 import type { BillingService } from './services/billing.service.js';
 import type { InvoiceStatus, SubscriptionStatus } from '@shared/database/schema/billing.js';
+import { workspaces } from '@shared/database/schema/workspaces.js';
 import {
   billingPaymentFailures,
   billingWebhookEvents,
@@ -32,6 +35,7 @@ const REDIS_DEDUP_TTL_S = 60 * 60 * 24 * 7; // 1 week — Stripe retries up to 3
  */
 export class StripeWebhookHandler {
   public constructor(
+    private readonly db: Database,
     private readonly repo: BillingRepository,
     private readonly billing: BillingService,
     private readonly stripe: StripeClient,
@@ -211,6 +215,10 @@ export class StripeWebhookHandler {
       stripeProductId: null,
       billingInterval: null,
     });
+    await this.db.update(workspaces)
+      .set({ plan: 'free', updatedAt: new Date() })
+      .where(eq(workspaces.id, workspaceId))
+      .catch(() => undefined);
     await this.redis.del(`billing:usage:${workspaceId}`).catch(() => undefined);
   }
 
@@ -257,6 +265,16 @@ export class StripeWebhookHandler {
     const sub = await this.repo.findSubscriptionByWorkspace(workspaceId);
     billingPaymentFailures.inc({ plan: sub?.plan ?? 'unknown' });
     this.log.warn({ workspaceId, invoiceId: invoice.id, amountDue: invoice.amount_due }, 'payment failed');
+
+    if (invoice.subscription) {
+      const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription.id;
+      await this.repo.updateSubscriptionByStripeId(subId, { plan: 'free', status: 'past_due' });
+      await this.db.update(workspaces)
+        .set({ plan: 'free', updatedAt: new Date() })
+        .where(eq(workspaces.id, workspaceId))
+        .catch(() => undefined);
+      await this.redis.del(`billing:usage:${workspaceId}`).catch(() => undefined);
+    }
 
     await this.audit.record({
       action: 'billing.payment.failed',

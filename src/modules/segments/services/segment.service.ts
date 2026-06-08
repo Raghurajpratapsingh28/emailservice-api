@@ -1,10 +1,12 @@
 import type { FastifyBaseLogger } from 'fastify';
-import { NotFoundError, ValidationError } from '@shared/errors/app-errors.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '@shared/errors/app-errors.js';
 import type { Paginated } from '@shared/types/index.js';
 import type { Segment } from '@shared/database/schema/segments.js';
 import type { Contact } from '@shared/database/schema/contacts.js';
 import type { NatsClient } from '@shared/queue/nats.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
+import { resourceLimitsForPlan } from '@constants/plan-limits.js';
 import type { SegmentRepository } from '../repositories/segment.repository.js';
 import type { CreateSegmentBody, ListSegmentsQuery, UpdateSegmentBody } from '../schemas/segment.schema.js';
 import {
@@ -33,6 +35,7 @@ export class SegmentService {
     private readonly nats: NatsClient,
     private readonly audit: AuditService,
     private readonly log: FastifyBaseLogger,
+    private readonly billing: BillingService,
   ) {}
 
   public async createSegment(
@@ -44,6 +47,18 @@ export class SegmentService {
       throw new ValidationError('filterTree is required for dynamic segments', {
         field: 'filterTree',
       });
+    }
+
+    const sub = await this.billing.getSubscription(workspaceId);
+    const limits = resourceLimitsForPlan(sub.plan);
+    if (Number.isFinite(limits.maxSegments)) {
+      const segmentCount = await this.repo.countByWorkspace(workspaceId);
+      if (segmentCount >= limits.maxSegments) {
+        throw new ForbiddenError(
+          `Segment limit (${limits.maxSegments}) reached for your plan`,
+          'QUOTA_EXCEEDED',
+        );
+      }
     }
 
     const isStatic = (body.type ?? 'static') === 'static';

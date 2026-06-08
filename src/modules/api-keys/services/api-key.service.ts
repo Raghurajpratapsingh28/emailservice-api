@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
-import { NotFoundError } from '@shared/errors/app-errors.js';
+import { ForbiddenError, NotFoundError } from '@shared/errors/app-errors.js';
 import type { ApiKey } from '@shared/database/schema/api-keys.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
+import { resourceLimitsForPlan } from '@constants/plan-limits.js';
 import type { ApiKeyRepository, ListApiKeysFilter } from '../repositories/api-key.repository.js';
 import type { CreateApiKeyBody, ListApiKeysQuery } from '../schemas/api-key.schema.js';
 
@@ -36,6 +38,7 @@ export class ApiKeyService {
     private readonly repo: ApiKeyRepository,
     private readonly audit: AuditService,
     private readonly log: FastifyBaseLogger,
+    private readonly billing: BillingService,
   ) {}
 
   public async createApiKey(
@@ -43,6 +46,18 @@ export class ApiKeyService {
     body: CreateApiKeyBody,
     actor: ActorContext,
   ): Promise<CreatedApiKey> {
+    const sub = await this.billing.getSubscription(workspaceId);
+    const limits = resourceLimitsForPlan(sub.plan);
+    if (Number.isFinite(limits.maxApiKeys)) {
+      const keyCount = await this.repo.countActiveByWorkspace(workspaceId);
+      if (keyCount >= limits.maxApiKeys) {
+        throw new ForbiddenError(
+          `API key limit (${limits.maxApiKeys}) reached for your plan`,
+          'QUOTA_EXCEEDED',
+        );
+      }
+    }
+
     const plaintext = generatePlaintextKey();
     const keyHash = hashKey(plaintext);
     const keyPrefix = plaintext.slice(0, KEY_DISPLAY_LENGTH);

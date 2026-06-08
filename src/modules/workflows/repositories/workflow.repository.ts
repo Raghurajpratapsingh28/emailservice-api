@@ -90,6 +90,14 @@ export class WorkflowRepository {
     return rows[0] ?? null;
   }
 
+  public async countByWorkspace(workspaceId: string): Promise<number> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(workflows)
+      .where(and(eq(workflows.workspaceId, workspaceId), isNull(workflows.deletedAt)));
+    return Number(rows[0]?.c ?? 0);
+  }
+
   // ─── Executions ───────────────────────────────────────────────────────────
 
   public async listExecutions(

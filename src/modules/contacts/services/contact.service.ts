@@ -2,11 +2,14 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '@shared/database/client.js';
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
 } from '@shared/errors/app-errors.js';
 import type { Paginated } from '@shared/types/index.js';
 import type { Contact } from '@shared/database/schema/contacts.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
+import { quotasForPlan } from '@constants/plan-limits.js';
 import type { ContactRepository, ListContactsFilter } from '../repositories/contact.repository.js';
 import type { CreateContactBody, ListContactsQuery, UpdateContactBody } from '../schemas/contact.schema.js';
 import {
@@ -32,6 +35,7 @@ export class ContactService {
     private readonly repo: ContactRepository,
     private readonly audit: AuditService,
     private readonly log: FastifyBaseLogger,
+    private readonly billing: BillingService,
   ) {}
 
   public async createContact(
@@ -46,6 +50,16 @@ export class ContactService {
       if (existing) {
         throw new ConflictError('Contact with this email already exists', 'CONTACT_ALREADY_EXISTS');
       }
+    }
+
+    const sub = await this.billing.getSubscription(workspaceId);
+    const quotas = quotasForPlan(sub.plan);
+    const contactCount = await this.repo.countByWorkspace(workspaceId);
+    if (contactCount >= quotas.contacts) {
+      throw new ForbiddenError(
+        `Contact limit (${quotas.contacts}) reached for your plan`,
+        'QUOTA_EXCEEDED',
+      );
     }
 
     const contact = await this.db.transaction(async (tx) => {
@@ -71,6 +85,7 @@ export class ContactService {
     });
 
     contactsCreated.inc({ workspace_id: workspaceId });
+    this.billing.recordUsage(workspaceId, 'contacts', 1).catch(() => undefined);
     this.log.info({ contactId: contact.id, workspaceId }, 'contact created');
 
     await this.audit.record({
@@ -210,6 +225,16 @@ export class ContactService {
     items: CreateContactBody[],
     actor: ActorContext,
   ): Promise<{ imported: number; skipped: number }> {
+    const sub = await this.billing.getSubscription(workspaceId);
+    const quotas = quotasForPlan(sub.plan);
+    const contactCount = await this.repo.countByWorkspace(workspaceId);
+    if (contactCount + items.length > quotas.contacts) {
+      throw new ForbiddenError(
+        `Contact limit (${quotas.contacts}) reached for your plan`,
+        'QUOTA_EXCEEDED',
+      );
+    }
+
     const values = items.map((item) => ({
       workspaceId,
       email: item.email?.toLowerCase(),
@@ -240,6 +265,7 @@ export class ContactService {
     }
 
     contactsCreated.inc({ workspace_id: workspaceId }, imported);
+    this.billing.recordUsage(workspaceId, 'contacts', imported).catch(() => undefined);
     this.log.info({ workspaceId, imported, skipped }, 'bulk import completed');
 
     await this.audit.record({

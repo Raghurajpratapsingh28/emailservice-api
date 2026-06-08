@@ -70,6 +70,14 @@ export class SegmentRepository {
     return rows[0] ?? null;
   }
 
+  public async countByWorkspace(workspaceId: string): Promise<number> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(segments)
+      .where(and(eq(segments.workspaceId, workspaceId), isNull(segments.deletedAt)));
+    return Number(rows[0]?.c ?? 0);
+  }
+
   // ─── Memberships ──────────────────────────────────────────────────────────
 
   public async getPreviewContacts(

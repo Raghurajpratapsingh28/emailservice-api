@@ -22,6 +22,7 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
     softDelete: vi.fn(),
     listExecutions: vi.fn(),
     getExecutionStats: vi.fn().mockResolvedValue({ total: 0, completed: 0, failed: 0, running: 0 }),
+    countByWorkspace: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }
@@ -42,6 +43,14 @@ function makeLog() {
   return { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
 }
 
+function makeBilling() {
+  return {
+    getSubscription: vi.fn().mockResolvedValue({ plan: 'pro' }),
+    hasQuotaRemaining: vi.fn().mockResolvedValue(true),
+    recordUsage: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 const actor = { user: { id: 'user-1' }, ipAddress: '127.0.0.1' };
 const workspaceId = 'ws-1';
 
@@ -50,7 +59,7 @@ describe('WorkflowService', () => {
     it('creates a workflow with valid graph', async () => {
       const workflow = { id: 'wf-1', workspaceId, name: 'Test', status: 'draft' };
       const repo = makeRepo({ insert: vi.fn().mockResolvedValue(workflow) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.createWorkflow(workspaceId, { name: 'Test', graph: validGraph }, actor);
       expect(result.id).toBe('wf-1');
@@ -59,7 +68,7 @@ describe('WorkflowService', () => {
 
     it('rejects invalid graph', async () => {
       const repo = makeRepo();
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const badGraph: WorkflowGraph = {
         nodes: [{ id: 'end_1', type: 'end' }],
@@ -74,14 +83,14 @@ describe('WorkflowService', () => {
     it('rejects update on published workflow', async () => {
       const workflow = { id: 'wf-1', workspaceId, status: 'published' };
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(workflow) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.updateWorkflow(workspaceId, 'wf-1', { name: 'New' }, actor)).rejects.toThrow(ValidationError);
     });
 
     it('throws WORKFLOW_NOT_FOUND when missing', async () => {
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(null) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.updateWorkflow(workspaceId, 'missing', { name: 'X' }, actor)).rejects.toThrow(NotFoundError);
     });
@@ -96,7 +105,7 @@ describe('WorkflowService', () => {
         transitionStatus: vi.fn().mockResolvedValue(published),
       });
       const nats = makeNats();
-      const svc = new WorkflowService(repo as never, nats as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, nats as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.publishWorkflow(workspaceId, 'wf-1', actor);
       expect(result.status).toBe('published');
@@ -106,7 +115,7 @@ describe('WorkflowService', () => {
     it('throws WORKFLOW_ALREADY_PUBLISHED when already published', async () => {
       const workflow = { id: 'wf-1', workspaceId, status: 'published', graph: validGraph };
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(workflow) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.publishWorkflow(workspaceId, 'wf-1', actor)).rejects.toThrow(ConflictError);
     });
@@ -116,7 +125,7 @@ describe('WorkflowService', () => {
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(workflow) });
       const redis = makeRedis();
       redis.set = vi.fn().mockResolvedValue(null); // lock not acquired
-      const svc = new WorkflowService(repo as never, makeNats() as never, redis as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, redis as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.publishWorkflow(workspaceId, 'wf-1', actor)).rejects.toThrow(ConflictError);
     });
@@ -125,7 +134,7 @@ describe('WorkflowService', () => {
       const badGraph = { nodes: [{ id: 'end_1', type: 'end' }], edges: [] };
       const workflow = { id: 'wf-1', workspaceId, status: 'draft', graph: badGraph };
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(workflow) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.publishWorkflow(workspaceId, 'wf-1', actor)).rejects.toThrow(ValidationError);
     });
@@ -135,7 +144,7 @@ describe('WorkflowService', () => {
     it('pauses a published workflow', async () => {
       const paused = { id: 'wf-1', workspaceId, status: 'paused' };
       const repo = makeRepo({ transitionStatus: vi.fn().mockResolvedValue(paused) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.pauseWorkflow(workspaceId, 'wf-1', actor);
       expect(result.status).toBe('paused');
@@ -147,7 +156,7 @@ describe('WorkflowService', () => {
         transitionStatus: vi.fn().mockResolvedValue(null),
         findById: vi.fn().mockResolvedValue(workflow),
       });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.pauseWorkflow(workspaceId, 'wf-1', actor)).rejects.toThrow(ValidationError);
     });
@@ -157,7 +166,7 @@ describe('WorkflowService', () => {
     it('resumes a paused workflow', async () => {
       const resumed = { id: 'wf-1', workspaceId, status: 'published' };
       const repo = makeRepo({ transitionStatus: vi.fn().mockResolvedValue(resumed) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.resumeWorkflow(workspaceId, 'wf-1', actor);
       expect(result.status).toBe('published');
@@ -167,14 +176,14 @@ describe('WorkflowService', () => {
   describe('deleteWorkflow', () => {
     it('soft-deletes successfully', async () => {
       const repo = makeRepo({ softDelete: vi.fn().mockResolvedValue({ id: 'wf-1' }) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.deleteWorkflow(workspaceId, 'wf-1', actor)).resolves.toBeUndefined();
     });
 
     it('throws WORKFLOW_NOT_FOUND when missing', async () => {
       const repo = makeRepo({ softDelete: vi.fn().mockResolvedValue(null) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.deleteWorkflow(workspaceId, 'missing', actor)).rejects.toThrow(NotFoundError);
     });
@@ -183,7 +192,7 @@ describe('WorkflowService', () => {
   describe('listExecutions', () => {
     it('throws WORKFLOW_NOT_FOUND when workflow missing', async () => {
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(null) });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.listExecutions(workspaceId, 'missing', 1, 20)).rejects.toThrow(NotFoundError);
     });
@@ -194,7 +203,7 @@ describe('WorkflowService', () => {
         findById: vi.fn().mockResolvedValue(workflow),
         listExecutions: vi.fn().mockResolvedValue({ items: [], total: 0 }),
       });
-      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
+      const svc = new WorkflowService(repo as never, makeNats() as never, makeRedis() as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.listExecutions(workspaceId, 'wf-1', 1, 20);
       expect(result.total).toBe(0);

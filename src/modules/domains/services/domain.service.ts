@@ -11,7 +11,9 @@ import type { Domain, DomainStatus } from '@shared/database/schema/domains.js';
 import type { NatsClient } from '@shared/queue/nats.js';
 import type { AuthenticatedUser } from '@shared/types/index.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
+import type { BillingService } from '@modules/billing/services/billing.service.js';
 import type { SesIdentityClient } from '@shared/email/ses-identity.js';
+import { resourceLimitsForPlan } from '@constants/plan-limits.js';
 import { DomainRepository } from '../repositories/domain.repository.js';
 
 // ─── Metrics ─────────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ export class DomainService {
     private readonly audit: AuditService,
     private readonly nats: NatsClient,
     private readonly logger: { info: (...a: unknown[]) => void; warn: (...a: unknown[]) => void; error: (...a: unknown[]) => void },
+    private readonly billing: BillingService,
   ) {}
 
   // ─── 1. Create domain ─────────────────────────────────────────────────────
@@ -106,6 +109,18 @@ export class DomainService {
     domain: string,
     actor: ActorContext,
   ): Promise<DomainView> {
+    const sub = await this.billing.getSubscription(workspaceId);
+    const limits = resourceLimitsForPlan(sub.plan);
+    if (Number.isFinite(limits.maxDomains)) {
+      const domainCount = await this.repo.countByWorkspace(workspaceId);
+      if (domainCount >= limits.maxDomains) {
+        throw new ForbiddenError(
+          `Domain limit (${limits.maxDomains}) reached for your plan`,
+          'QUOTA_EXCEEDED',
+        );
+      }
+    }
+
     const existing = await this.repo.findByDomain(workspaceId, domain);
     if (existing) {
       throw new ConflictError('Domain already exists for this workspace', 'DOMAIN_ALREADY_EXISTS');
@@ -176,7 +191,7 @@ export class DomainService {
       workspaceId,
       domain,
     });
-    domainsCreatedTotal.inc({ plan: 'unknown' });
+    domainsCreatedTotal.inc({ plan: sub.plan });
 
     await this.audit.record({
       action: 'workspace.member.added', // generic; metadata.kind discriminates
