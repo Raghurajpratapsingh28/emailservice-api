@@ -138,6 +138,12 @@ export class BillingService {
         metadata: { plan: body.plan, billingInterval: body.billingInterval, sessionId: session.id },
       }).catch(() => undefined);
 
+      // Release the lock now that we have a valid session URL. The webhook
+      // handler also deletes it on checkout.session.completed; this early
+      // release means a failed/abandoned checkout lets the user try again
+      // immediately rather than waiting for the 60s TTL to expire.
+      await this.redis.del(lockKey).catch(() => undefined);
+
       return { checkoutUrl: session.url, sessionId: session.id };
     } catch (err) {
       // Release the lock on any failure so the user can retry quickly.
@@ -211,6 +217,17 @@ export class BillingService {
     const sub = await this.repo.findSubscriptionByWorkspace(workspaceId);
     if (!sub || !sub.stripeSubscriptionId) {
       throw new ForbiddenError('No active subscription for this workspace', 'ACTIVE_SUBSCRIPTION_REQUIRED');
+    }
+
+    // Only allow plan changes on statuses where Stripe will accept an update.
+    // past_due is allowed because the user may be upgrading to resolve a payment
+    // failure. canceled/incomplete_expired are terminal — they must go through checkout.
+    const CHANGEABLE_STATUSES: string[] = ['active', 'trialing', 'past_due'];
+    if (!CHANGEABLE_STATUSES.includes(sub.status)) {
+      throw new ForbiddenError(
+        `Cannot change plan on a subscription with status "${sub.status}"; please start a new subscription`,
+        'ACTIVE_SUBSCRIPTION_REQUIRED',
+      );
     }
 
     const fromPlan = sub.plan as BillingPlan;

@@ -194,7 +194,6 @@ export class TransactionalService {
     // 1f. Publish — with rollback on failure
     try {
       await this.nats.publish(NATS_SUBJECTS.EMAIL_SEND_TRANSACTIONAL, payload);
-      await this.billing.recordUsage(workspaceId, 'emails', 1).catch(() => undefined);
     } catch (err) {
       emailsQueuePublishFailures.inc();
       this.logger.error(
@@ -209,6 +208,8 @@ export class TransactionalService {
         err instanceof Error ? err : new Error(String(err)),
       );
     }
+
+    await this.billing.recordUsage(workspaceId, 'emails', 1);
 
     const result: SendEmailResult = {
       sendId: internalRow.sendId,

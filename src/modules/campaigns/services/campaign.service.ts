@@ -405,27 +405,32 @@ export class CampaignService {
       ? (sub.plan as keyof typeof PLAN_LIMITS)
       : 'free';
     const maxCampaigns = PLAN_LIMITS[plan].maxCampaignsPerMonth;
-    const sentThisMonth = await this.repo.countSentThisMonth(workspaceId);
-    if (sentThisMonth >= maxCampaigns) {
-      throw new ForbiddenError('Campaign limit reached for your plan', 'QUOTA_EXCEEDED');
-    }
 
     if (!await this.billing.hasQuotaRemaining(workspaceId, 'emails', segment.contactCount)) {
       throw new ForbiddenError('Email quota exceeded', 'QUOTA_EXCEEDED');
     }
 
-    // Atomic transition draft|scheduled|paused → sending; only one caller wins.
-    const transitioning = await this.repo.transitionStatusWithVersion(
-      workspaceId,
-      campaignId,
-      existing.version,
-      ['draft', 'scheduled', 'paused'] as const,
-      'sending',
-      {
-        startedAt: new Date(),
-        recipientCount: segment.contactCount,
-      },
-    );
+    // Quota check + status transition in one transaction to prevent two concurrent
+    // campaign sends both passing the monthly limit check before either transitions.
+    const transitioning = await this.db.transaction(async (tx) => {
+      const sentThisMonth = await this.repo.countSentThisMonth(workspaceId, tx);
+      if (sentThisMonth >= maxCampaigns) {
+        throw new ForbiddenError('Campaign limit reached for your plan', 'QUOTA_EXCEEDED');
+      }
+
+      return this.repo.transitionStatusWithVersion(
+        workspaceId,
+        campaignId,
+        existing.version,
+        ['draft', 'scheduled', 'paused'] as const,
+        'sending',
+        {
+          startedAt: new Date(),
+          recipientCount: segment.contactCount,
+        },
+        tx,
+      );
+    });
     if (!transitioning) {
       campaignsTransitionFailures.inc({ from: existing.status, to: 'sending' });
       throw new ConflictError(
@@ -478,7 +483,7 @@ export class CampaignService {
       );
     }
 
-    this.billing.recordUsage(workspaceId, 'emails', segment.contactCount).catch(() => undefined);
+    await this.billing.recordUsage(workspaceId, 'emails', segment.contactCount);
     campaignsSentTriggers.inc({ outcome: 'queued' });
     await this.audit.record({
       action: 'workspace.member.added',

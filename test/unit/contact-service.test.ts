@@ -13,6 +13,7 @@ function makeRepo(overrides: Record<string, unknown> = {}) {
     list: vi.fn(),
     update: vi.fn(),
     softDelete: vi.fn(),
+    countByWorkspace: vi.fn().mockResolvedValue(0),
     getTagsForContact: vi.fn().mockResolvedValue([]),
     getTagsForContacts: vi.fn().mockResolvedValue(new Map()),
     replaceTags: vi.fn(),
@@ -28,6 +29,11 @@ function makeDb(repo: ReturnType<typeof makeRepo>) {
       return fn({
         insert: repo.insert,
         delete: vi.fn(),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ c: 0 }]),
+          }),
+        }),
       });
     }),
   };
@@ -39,6 +45,14 @@ function makeAudit() {
 
 function makeLog() {
   return { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+}
+
+function makeBilling() {
+  return {
+    getSubscription: vi.fn().mockResolvedValue({ plan: 'pro' }),
+    recordUsage: vi.fn().mockResolvedValue(undefined),
+    hasQuotaRemaining: vi.fn().mockResolvedValue(true),
+  };
 }
 
 const actor = { user: { id: 'user-1' }, ipAddress: '127.0.0.1' };
@@ -53,7 +67,7 @@ describe('ContactService', () => {
         insert: vi.fn().mockResolvedValue(contact),
       });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.createContact(workspaceId, { email: 'Alice@Example.com' }, actor);
       expect(result.id).toBe('c-1');
@@ -65,7 +79,7 @@ describe('ContactService', () => {
         findByEmail: vi.fn().mockResolvedValue({ id: 'existing' }),
       });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(
         svc.createContact(workspaceId, { email: 'alice@example.com' }, actor),
@@ -78,7 +92,7 @@ describe('ContactService', () => {
         insert: vi.fn().mockImplementation(async (_tx, values) => ({ ...values, id: 'c-1' })),
       });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await svc.createContact(workspaceId, { email: 'ALICE@EXAMPLE.COM' }, actor);
       const insertCall = repo.insert.mock.calls[0]![1] as { email: string };
@@ -90,7 +104,7 @@ describe('ContactService', () => {
     it('throws CONTACT_NOT_FOUND when contact does not exist', async () => {
       const repo = makeRepo({ findById: vi.fn().mockResolvedValue(null) });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.getContact(workspaceId, 'missing-id')).rejects.toThrow(NotFoundError);
     });
@@ -102,7 +116,7 @@ describe('ContactService', () => {
         getTagsForContact: vi.fn().mockResolvedValue(['trial', 'saas']),
       });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.getContact(workspaceId, 'c-1');
       expect(result.tags).toEqual(['trial', 'saas']);
@@ -113,7 +127,7 @@ describe('ContactService', () => {
     it('throws CONTACT_NOT_FOUND when contact does not exist', async () => {
       const repo = makeRepo({ softDelete: vi.fn().mockResolvedValue(null) });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.deleteContact(workspaceId, 'missing', actor)).rejects.toThrow(NotFoundError);
     });
@@ -121,7 +135,7 @@ describe('ContactService', () => {
     it('soft-deletes successfully', async () => {
       const repo = makeRepo({ softDelete: vi.fn().mockResolvedValue({ id: 'c-1' }) });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.deleteContact(workspaceId, 'c-1', actor)).resolves.toBeUndefined();
     });
@@ -129,11 +143,17 @@ describe('ContactService', () => {
 
   describe('bulkImport', () => {
     it('returns imported and skipped counts', async () => {
+      const inserted = [{ id: 'c-1', email: 'a@b.com' }];
       const repo = makeRepo({
-        insertBulk: vi.fn().mockResolvedValue([{ id: 'c-1', email: 'a@b.com' }]),
+        countByWorkspace: vi.fn().mockResolvedValue(0),
+        insertBulk: vi.fn().mockResolvedValue(inserted),
       });
-      const db = { transaction: vi.fn() };
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const db = makeDb(repo);
+      // Override transaction to run the callback with a tx that delegates insertBulk
+      db.transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+        return fn({ insertBulk: repo.insertBulk, select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ c: 0 }]) }) }) });
+      });
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.bulkImport(
         workspaceId,
@@ -150,7 +170,7 @@ describe('ContactService', () => {
       const updated = { id: 'c-1', emailSuppressed: true };
       const repo = makeRepo({ update: vi.fn().mockResolvedValue(updated) });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       const result = await svc.suppressContact(workspaceId, 'c-1', actor);
       expect(result.emailSuppressed).toBe(true);
@@ -160,7 +180,7 @@ describe('ContactService', () => {
     it('throws CONTACT_NOT_FOUND when contact missing', async () => {
       const repo = makeRepo({ update: vi.fn().mockResolvedValue(null) });
       const db = makeDb(repo);
-      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never);
+      const svc = new ContactService(db as never, repo as never, makeAudit() as never, makeLog() as never, makeBilling() as never);
 
       await expect(svc.suppressContact(workspaceId, 'missing', actor)).rejects.toThrow(NotFoundError);
     });

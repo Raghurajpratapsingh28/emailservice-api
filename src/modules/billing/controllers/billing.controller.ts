@@ -53,8 +53,6 @@ export const billingController = {
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
       canceledAt: sub.canceledAt,
       trialEndsAt: sub.trialEndsAt,
-      stripeCustomerId: sub.stripeCustomerId,
-      stripeSubscriptionId: sub.stripeSubscriptionId,
     });
   },
 

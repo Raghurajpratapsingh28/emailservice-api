@@ -148,8 +148,9 @@ export class ContactRepository {
     return rows[0] ?? null;
   }
 
-  public async countByWorkspace(workspaceId: string): Promise<number> {
-    const rows = await this.db
+  public async countByWorkspace(workspaceId: string, tx?: Tx | Database): Promise<number> {
+    const db = tx ?? this.db;
+    const rows = await db
       .select({ c: count() })
       .from(contacts)
       .where(and(eq(contacts.workspaceId, workspaceId), isNull(contacts.deletedAt)));

@@ -94,11 +94,15 @@ export class BillingRepository {
   public async updateSubscriptionByStripeId(
     stripeSubscriptionId: string,
     patch: Partial<Omit<Subscription, 'id' | 'workspaceId' | 'createdAt'>>,
+    workspaceId?: string,
   ): Promise<Subscription | null> {
+    const cond = workspaceId
+      ? and(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId), eq(subscriptions.workspaceId, workspaceId))
+      : eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId);
     const rows = await this.db
       .update(subscriptions)
       .set(patch)
-      .where(eq(subscriptions.stripeSubscriptionId, stripeSubscriptionId))
+      .where(cond)
       .returning();
     return rows[0] ?? null;
   }

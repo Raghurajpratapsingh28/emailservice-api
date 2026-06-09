@@ -99,7 +99,9 @@ export default async function billingRoutes(app: FastifyInstance): Promise<void>
 export async function stripeWebhookRoutes(app: FastifyInstance): Promise<void> {
   app.addContentTypeParser(
     'application/json',
-    { parseAs: 'buffer' },
+    // Stripe webhook payloads are small (<10 KB). Cap at 64 KB to prevent
+    // the unauthenticated endpoint from being used to waste server resources.
+    { parseAs: 'buffer', bodyLimit: 65_536 },
     (req, body: Buffer, done) => {
       // Attach raw body for the controller; do not parse to JSON here so the
       // webhook signature check sees the exact bytes Stripe signed.

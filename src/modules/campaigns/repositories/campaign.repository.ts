@@ -221,8 +221,10 @@ export class CampaignRepository {
     fromStatuses: readonly CampaignStatus[],
     toStatus: CampaignStatus,
     extra: Partial<Campaign> = {},
+    tx?: Tx | Database,
   ): Promise<Campaign | null> {
-    const rows = await this.db
+    const db = tx ?? this.db;
+    const rows = await db
       .update(campaigns)
       .set({ status: toStatus, ...extra, version: sql`${campaigns.version} + 1` })
       .where(
@@ -260,9 +262,10 @@ export class CampaignRepository {
     return rows[0] ?? null;
   }
 
-  public async countSentThisMonth(workspaceId: string): Promise<number> {
+  public async countSentThisMonth(workspaceId: string, tx?: Tx | Database): Promise<number> {
+    const db = tx ?? this.db;
     const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-    const rows = await this.db
+    const rows = await db
       .select({ c: count() })
       .from(campaigns)
       .where(

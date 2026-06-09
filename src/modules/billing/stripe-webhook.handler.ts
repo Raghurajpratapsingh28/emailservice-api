@@ -58,9 +58,18 @@ export class StripeWebhookHandler {
     // them through dedup (the unique constraint catches duplicate processing).
     const ageSeconds = Math.floor(Date.now() / 1000) - event.created;
     if (ageSeconds > REPLAY_WINDOW_SECONDS) {
-      // Soft warning: allow processing because legitimate Stripe retries are
-      // older than 5 minutes too. The unique constraint handles the dedup.
-      this.log.warn({ eventId: event.id, ageSeconds, type: event.type }, 'stripe webhook outside replay window');
+      // Stripe's own SDK already validates the timestamp within 300s via
+      // `constructEvent`. We add a secondary check here and reject — an event
+      // this old is either a replay attack or a Stripe re-delivery that our
+      // idempotency dedup will handle on the next retry anyway.
+      billingWebhookEvents.inc({ event_type: event.type, outcome: 'replay_rejected' });
+      this.log.warn({ eventId: event.id, ageSeconds, type: event.type }, 'stripe webhook rejected: outside replay window');
+      await this.audit.record({
+        action: 'billing.webhook.replay_rejected',
+        success: false,
+        metadata: { stripeEventId: event.id, type: event.type, ageSeconds },
+      }).catch(() => undefined);
+      return { received: true };
     }
 
     // Fast-path duplicate check via Redis. Cheap and avoids DB round-trip on
@@ -214,7 +223,7 @@ export class StripeWebhookHandler {
       stripePriceId: null,
       stripeProductId: null,
       billingInterval: null,
-    });
+    }, workspaceId);
     await this.db.update(workspaces)
       .set({ plan: 'free', updatedAt: new Date() })
       .where(eq(workspaces.id, workspaceId))
@@ -268,7 +277,7 @@ export class StripeWebhookHandler {
 
     if (invoice.subscription) {
       const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription.id;
-      await this.repo.updateSubscriptionByStripeId(subId, { plan: 'free', status: 'past_due' });
+      await this.repo.updateSubscriptionByStripeId(subId, { plan: 'free', status: 'past_due' }, workspaceId);
       await this.db.update(workspaces)
         .set({ plan: 'free', updatedAt: new Date() })
         .where(eq(workspaces.id, workspaceId))

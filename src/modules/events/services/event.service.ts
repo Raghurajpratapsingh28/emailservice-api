@@ -425,7 +425,7 @@ export class EventService {
       throw new Error('Failed to queue event');
     }
 
-    this.billing.recordUsage(key.workspaceId, 'events', 1).catch(() => undefined);
+    await this.billing.recordUsage(key.workspaceId, 'events', 1);
     eventsAccepted.inc({ event_type: data.eventType });
     this.logger.info(
       { workspaceId: key.workspaceId, eventType: data.eventType, eventId: row.id },

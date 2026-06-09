@@ -54,15 +54,18 @@ export class ContactService {
 
     const sub = await this.billing.getSubscription(workspaceId);
     const quotas = quotasForPlan(sub.plan);
-    const contactCount = await this.repo.countByWorkspace(workspaceId);
-    if (contactCount >= quotas.contacts) {
-      throw new ForbiddenError(
-        `Contact limit (${quotas.contacts}) reached for your plan`,
-        'QUOTA_EXCEEDED',
-      );
-    }
 
+    // Quota check + insert in one transaction to prevent TOCTOU races where
+    // concurrent requests both pass the limit check before either inserts.
     const contact = await this.db.transaction(async (tx) => {
+      const contactCount = await this.repo.countByWorkspace(workspaceId, tx);
+      if (contactCount >= quotas.contacts) {
+        throw new ForbiddenError(
+          `Contact limit (${quotas.contacts}) reached for your plan`,
+          'QUOTA_EXCEEDED',
+        );
+      }
+
       const created = await this.repo.insert(tx, {
         workspaceId,
         email,
@@ -85,7 +88,7 @@ export class ContactService {
     });
 
     contactsCreated.inc({ workspace_id: workspaceId });
-    this.billing.recordUsage(workspaceId, 'contacts', 1).catch(() => undefined);
+    await this.billing.recordUsage(workspaceId, 'contacts', 1);
     this.log.info({ contactId: contact.id, workspaceId }, 'contact created');
 
     await this.audit.record({
@@ -227,13 +230,6 @@ export class ContactService {
   ): Promise<{ imported: number; skipped: number }> {
     const sub = await this.billing.getSubscription(workspaceId);
     const quotas = quotasForPlan(sub.plan);
-    const contactCount = await this.repo.countByWorkspace(workspaceId);
-    if (contactCount + items.length > quotas.contacts) {
-      throw new ForbiddenError(
-        `Contact limit (${quotas.contacts}) reached for your plan`,
-        'QUOTA_EXCEEDED',
-      );
-    }
 
     const values = items.map((item) => ({
       workspaceId,
@@ -249,7 +245,17 @@ export class ContactService {
       source: (item.source ?? {}) as Record<string, unknown>,
     }));
 
-    const inserted = await this.repo.insertBulk(this.db, values);
+    // Quota check + insert in one transaction to prevent TOCTOU races.
+    const inserted = await this.db.transaction(async (tx) => {
+      const contactCount = await this.repo.countByWorkspace(workspaceId, tx);
+      if (contactCount + items.length > quotas.contacts) {
+        throw new ForbiddenError(
+          `Contact limit (${quotas.contacts}) reached for your plan`,
+          'QUOTA_EXCEEDED',
+        );
+      }
+      return this.repo.insertBulk(tx, values);
+    });
     const imported = inserted.length;
     const skipped = items.length - imported;
 
@@ -265,7 +271,7 @@ export class ContactService {
     }
 
     contactsCreated.inc({ workspace_id: workspaceId }, imported);
-    this.billing.recordUsage(workspaceId, 'contacts', imported).catch(() => undefined);
+    await this.billing.recordUsage(workspaceId, 'contacts', imported);
     this.log.info({ workspaceId, imported, skipped }, 'bulk import completed');
 
     await this.audit.record({

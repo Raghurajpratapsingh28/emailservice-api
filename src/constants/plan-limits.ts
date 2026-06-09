@@ -145,5 +145,10 @@ export function quotasForPlan(plan: string): Record<QuotaMetric, number> {
   if ((BILLING_PLANS as readonly string[]).includes(plan)) {
     return PLAN_QUOTAS[plan as BillingPlan];
   }
+  // enterprise is not in BILLING_PLANS (sales-managed, not purchasable via Stripe)
+  // but must get unlimited quotas, not the free-tier fallback.
+  if (plan === 'enterprise') {
+    return { contacts: Number.POSITIVE_INFINITY, emails: Number.POSITIVE_INFINITY, events: Number.POSITIVE_INFINITY };
+  }
   return PLAN_QUOTAS.free;
 }

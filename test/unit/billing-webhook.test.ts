@@ -65,6 +65,12 @@ function makeLog() {
   return { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
 }
 
+function makeDb() {
+  return {
+    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+  };
+}
+
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 describe('StripeWebhookHandler', () => {
@@ -76,6 +82,7 @@ describe('StripeWebhookHandler', () => {
         }),
       });
       const handler = new StripeWebhookHandler(
+        makeDb() as never,
         makeRepo() as never,
         makeBilling() as never,
         stripe as never,
@@ -96,7 +103,7 @@ describe('StripeWebhookHandler', () => {
       const redis = makeRedis();
 
       const handler = new StripeWebhookHandler(
-        repo as never, billing as never, stripe as never, redis as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, repo as never, billing as never, stripe as never, redis as never, makeAudit() as never, makeLog() as never,
       );
 
       // First delivery succeeds.
@@ -104,7 +111,7 @@ describe('StripeWebhookHandler', () => {
       // Second delivery (replay) — Redis NX returns null; handler should short-circuit.
       const audit = makeAudit();
       const handler2 = new StripeWebhookHandler(
-        repo as never, billing as never, stripe as never, redis as never, audit as never, makeLog() as never,
+        makeDb() as never, repo as never, billing as never, stripe as never, redis as never, audit as never, makeLog() as never,
       );
       await handler2.handle(Buffer.from('payload'), 'sig');
 
@@ -121,7 +128,7 @@ describe('StripeWebhookHandler', () => {
       const billing = makeBilling();
       const redis = makeRedis(); // fresh Redis — key not present
       const handler = new StripeWebhookHandler(
-        repo as never, billing as never, stripe as never, redis as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, repo as never, billing as never, stripe as never, redis as never, makeAudit() as never, makeLog() as never,
       );
 
       const result = await handler.handle(Buffer.from('payload'), 'sig');
@@ -156,7 +163,7 @@ describe('StripeWebhookHandler', () => {
       });
       const billing = makeBilling();
       const handler = new StripeWebhookHandler(
-        makeRepo() as never, billing as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, makeRepo() as never, billing as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
       );
 
       await handler.handle(Buffer.from('p'), 's');
@@ -178,7 +185,7 @@ describe('StripeWebhookHandler', () => {
       const stripe = makeStripe({ constructEvent: vi.fn().mockReturnValue(event) });
       const billing = makeBilling();
       const handler = new StripeWebhookHandler(
-        makeRepo() as never, billing as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, makeRepo() as never, billing as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
       );
 
       await handler.handle(Buffer.from('p'), 's');
@@ -197,13 +204,14 @@ describe('StripeWebhookHandler', () => {
       const stripe = makeStripe({ constructEvent: vi.fn().mockReturnValue(event) });
       const repo = makeRepo();
       const handler = new StripeWebhookHandler(
-        repo as never, makeBilling() as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, repo as never, makeBilling() as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
       );
 
       await handler.handle(Buffer.from('p'), 's');
       expect(repo.updateSubscriptionByStripeId).toHaveBeenCalledWith(
         'sub_test',
         expect.objectContaining({ plan: 'free', status: 'canceled', stripeSubscriptionId: null }),
+        'ws-1',
       );
     });
 
@@ -223,7 +231,7 @@ describe('StripeWebhookHandler', () => {
       const stripe = makeStripe({ constructEvent: vi.fn().mockReturnValue(event) });
       const repo = makeRepo();
       const handler = new StripeWebhookHandler(
-        repo as never, makeBilling() as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, repo as never, makeBilling() as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
       );
 
       await handler.handle(Buffer.from('p'), 's');
@@ -251,7 +259,7 @@ describe('StripeWebhookHandler', () => {
         findSubscriptionByWorkspace: vi.fn().mockResolvedValue({ plan: 'growth' }),
       });
       const handler = new StripeWebhookHandler(
-        repo as never, makeBilling() as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, repo as never, makeBilling() as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
       );
 
       await handler.handle(Buffer.from('p'), 's');
@@ -264,7 +272,7 @@ describe('StripeWebhookHandler', () => {
       const repo = makeRepo();
       const billing = makeBilling();
       const handler = new StripeWebhookHandler(
-        repo as never, billing as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
+        makeDb() as never, repo as never, billing as never, stripe as never, makeRedis() as never, makeAudit() as never, makeLog() as never,
       );
 
       const result = await handler.handle(Buffer.from('p'), 's');
@@ -276,14 +284,17 @@ describe('StripeWebhookHandler', () => {
   });
 
   describe('replay window', () => {
-    it('warns but still processes events older than replay window (Stripe legitimate retries)', async () => {
+    it('rejects events older than replay window', async () => {
       const veryOld = Math.floor(Date.now() / 1000) - 60 * 60; // 1 hour old
-      const event = { id: 'evt_old', type: 'invoice.created', created: veryOld, data: { object: { id: 'in_x', customer: 'cus_x', amount_due: 0, amount_paid: 0, currency: 'usd', status: 'draft', created: veryOld } } };
+      const event = { id: 'evt_old', type: 'invoice.created', created: veryOld, data: { object: {} } };
       const stripe = makeStripe({ constructEvent: vi.fn().mockReturnValue(event) });
+      const repo = makeRepo();
+      const billing = makeBilling();
       const log = makeLog();
       const handler = new StripeWebhookHandler(
-        makeRepo() as never,
-        { ...makeBilling(), resolveWorkspaceForCustomer: vi.fn().mockResolvedValue('ws-1') } as never,
+        makeDb() as never,
+        repo as never,
+        billing as never,
         stripe as never,
         makeRedis() as never,
         makeAudit() as never,
@@ -291,11 +302,15 @@ describe('StripeWebhookHandler', () => {
       );
 
       const result = await handler.handle(Buffer.from('p'), 's');
+      // Returns 200 so Stripe doesn't retry, but does not process the event.
       expect(result.received).toBe(true);
       expect(log.warn).toHaveBeenCalledWith(
         expect.objectContaining({ ageSeconds: expect.any(Number) }),
         expect.stringContaining('replay window'),
       );
+      // No domain side effects should have run.
+      expect(repo.insertBillingEventIfNew).not.toHaveBeenCalled();
+      expect(billing.reconcileSubscriptionFromStripe).not.toHaveBeenCalled();
     });
   });
 });
