@@ -6,8 +6,15 @@ import {
   type NewDomain,
 } from '@shared/database/schema/domains.js';
 import type { Database } from '@shared/database/client.js';
+import { ConflictError } from '@shared/errors/app-errors.js';
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+function isDuplicateKeyError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const msg = (err as { message?: string }).message ?? '';
+  return msg.includes('duplicate key value violates unique constraint');
+}
 
 export interface ListDomainsFilter {
   workspaceId: string;
@@ -30,8 +37,15 @@ export class DomainRepository {
   // ─── Inserts ──────────────────────────────────────────────────────────────
 
   public async insert(tx: Tx | Database, values: NewDomain): Promise<Domain> {
-    const rows = await tx.insert(domains).values(values).returning();
-    return rows[0]!;
+    try {
+      const rows = await tx.insert(domains).values(values).returning();
+      return rows[0]!;
+    } catch (err: unknown) {
+      if (isDuplicateKeyError(err)) {
+        throw new ConflictError('Domain already exists for this workspace', 'DOMAIN_ALREADY_EXISTS');
+      }
+      throw err;
+    }
   }
 
   // ─── Lookups ──────────────────────────────────────────────────────────────
@@ -66,6 +80,25 @@ export class DomainRepository {
     }
     const rows = await this.db.select().from(domains).where(and(...conds)).limit(1);
     return rows[0] ?? null;
+  }
+
+  /**
+   * Returns true if any OTHER workspace has an active (non-deleted) row for
+   * this domain. Used to block cross-workspace domain squatting.
+   */
+  public async isClaimedByAnotherWorkspace(workspaceId: string, domain: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: domains.id })
+      .from(domains)
+      .where(
+        and(
+          eq(domains.domain, domain),
+          isNull(domains.deletedAt),
+          sql`${domains.workspaceId} != ${workspaceId}`,
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   }
 
   // ─── Listing ──────────────────────────────────────────────────────────────

@@ -126,6 +126,13 @@ export class DomainService {
       throw new ConflictError('Domain already exists for this workspace', 'DOMAIN_ALREADY_EXISTS');
     }
 
+    if (await this.repo.isClaimedByAnotherWorkspace(workspaceId, domain)) {
+      throw new ConflictError(
+        'This domain is already registered by another account',
+        'DOMAIN_CLAIMED',
+      );
+    }
+
     // Step 2: insert pending row first so we own it before talking to SES.
     const created = await this.repo.insert(this.db, {
       workspaceId,
@@ -264,7 +271,7 @@ export class DomainService {
     const updated = await this.repo.updateWithVersion(workspaceId, domainId, row.version, {
       status: 'verifying',
       verificationStartedAt: new Date(),
-      verificationAttempts: row.verificationAttempts + 0, // unchanged here; the worker bumps it on each poll
+      verificationAttempts: 0, // reset so the worker gets a fresh attempt budget
     });
     if (!updated) {
       throw new ConflictError('Domain state changed — please retry', 'CONFLICT');

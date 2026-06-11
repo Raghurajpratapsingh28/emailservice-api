@@ -31,6 +31,10 @@ export const NATS_SUBJECTS = {
   DOMAIN_VERIFIED: 'domain.verified.v1',
   DOMAIN_VERIFICATION_FAILED: 'domain.verification_failed.v1',
   DOMAIN_DELETED: 'domain.deleted.v1',
+  /** Published by the worker after ReminderAfterAttempt checks find DNS still unset. */
+  DOMAIN_VERIFICATION_REMINDER: 'domain.verification.reminder.v1',
+  /** Published by DomainCleanupScheduler when a domain expires after 30 days unverified. */
+  DOMAIN_VERIFICATION_EXPIRED: 'domain.verification.expired.v1',
   /** Worker subscribes to this and runs an SES `GetIdentityVerificationAttributes` poll. */
   DOMAIN_VERIFY_POLL: 'domain.verify.poll',
 
