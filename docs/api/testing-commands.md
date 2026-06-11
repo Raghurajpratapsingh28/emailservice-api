@@ -20,7 +20,8 @@ curl http://localhost:4000/ready
 ```
 
 ```bash
-curl "http://localhost:4000/metrics?key=4fee8a4641dffe853649f070ce15336d34c181fed2470a348a33e171d80b30b4"
+curl http://localhost:4000/metrics \
+  -H "x-internal-key: <YOUR_INTERNAL_API_KEY>"
 ```
 
 ---

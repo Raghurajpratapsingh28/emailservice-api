@@ -32,7 +32,7 @@ const envSchema = z.object({
   DATABASE_SSL: z
     .union([z.string(), z.boolean()])
     .transform((v) => (typeof v === 'string' ? v === 'true' : v))
-    .default(false),
+    .default(true),
 
   // Redis
   REDIS_URL: z.string().url(),
@@ -73,7 +73,7 @@ const envSchema = z.object({
   SWAGGER_ENABLED: z
     .union([z.string(), z.boolean()])
     .transform((v) => (typeof v === 'string' ? v === 'true' : v))
-    .default(true),
+    .default(false),
   SWAGGER_PATH: z.string().default('/docs'),
 
   // ─── Stripe billing ───────────────────────────────────────────────────────

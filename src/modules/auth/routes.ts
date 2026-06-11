@@ -33,6 +33,10 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     perIpMax: max * 4, // refresh is the hot path; allow more
     windowSeconds: window,
   });
+  const changePasswordLimit = AuthRateLimitRules.changePassword(app.redis, {
+    perUserMax: 5,
+    windowSeconds: parseDurationToSeconds('15m'),
+  });
 
   // ─── Public ─────────────────────────────────────────────────────────────
   app.post(
@@ -153,7 +157,7 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/change-password',
     {
-      preHandler: [app.authenticate],
+      preHandler: [app.authenticate, ...changePasswordLimit],
       schema: {
         tags: ['auth'],
         summary: 'Change password',

@@ -77,15 +77,15 @@ export interface AcceptInviteInput {
 }
 
 /**
- * Pre-computed dummy bcrypt hash, generated once at module load. Used for
- * timing-safe paths (login + forgot-password) when the user does not exist
- * (F11, F17). Hashing on every request would be a DOS vector.
- *
- * The plaintext used to generate it is throwaway — we only ever compare the
- * user-provided plaintext against this hash, which will always return false.
+ * Pre-computed dummy bcrypt hash, generated once at module load using the live
+ * BCRYPT_ROUNDS config. Used for timing-safe paths (login + forgot-password)
+ * when the user does not exist (F11, F17). The cost factor must match real user
+ * hashes so both paths take equal time — a hardcoded hash with a fixed cost
+ * factor would reintroduce a timing oracle if BCRYPT_ROUNDS is ever raised.
  */
-const DUMMY_BCRYPT_HASH =
-  '$2b$12$9zJ.JQXwQ8FbMTQzTQ8c8eF3SjZb5fH5qrWzSTGqrTJ.WWxMCjqE2';
+const DUMMY_BCRYPT_HASH: Promise<string> = import('bcrypt').then(({ default: bcrypt }) =>
+  bcrypt.hash(generateRandomHex(32), config.BCRYPT_ROUNDS),
+);
 
 export class AuthService {
   public constructor(
@@ -201,8 +201,8 @@ export class AuthService {
       .limit(1);
     const user = userRows[0];
 
-    // F11 — fixed dummy hash; constant-time compare path.
-    const hash = user?.passwordHash ?? DUMMY_BCRYPT_HASH;
+    // F11 — dummy hash has same cost factor as real hashes; constant-time compare path.
+    const hash = user?.passwordHash ?? (await DUMMY_BCRYPT_HASH);
 
     if (user && user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       const retryAfter = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000);
@@ -386,8 +386,8 @@ export class AuthService {
     const user = userRows[0];
 
     if (!user || !user.isActive) {
-      // F11 — constant-time bcrypt compare against fixed dummy hash, no fresh hashing.
-      await this.passwords.verify('placeholder', DUMMY_BCRYPT_HASH);
+      // F11 — constant-time bcrypt compare; dummy hash has same cost factor as real hashes.
+      await this.passwords.verify('placeholder', await DUMMY_BCRYPT_HASH);
       authPasswordOps.inc({ op: 'forgot', outcome: 'user_not_found' });
       return;
     }
@@ -1016,7 +1016,7 @@ export class AuthService {
     userId: string,
     currentPassword: string,
     newPassword: string,
-    ctx: RequestContext,
+    _ctx: RequestContext,
   ): Promise<void> {
     const userRows = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
     const user = userRows[0];
@@ -1037,13 +1037,10 @@ export class AuthService {
       })
       .where(eq(users.id, userId));
 
-    await this.db
-      .update(refreshTokens)
-      .set({ revokedAt: now, revokedReason: 'password_reset' })
-      .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
-
-    if (ctx.accessJti) {
-      await this.tokens.denylistAccessJti(ctx.accessJti, 900);
+    const accessTtl = parseDurationToSeconds(config.JWT_ACCESS_TTL);
+    const revoked = await this.tokens.revokeAllForUser(userId, 'password_changed');
+    if (revoked.length > 0) {
+      await this.tokens.denylistAccessJtis(revoked, accessTtl);
     }
 
     authPasswordOps.inc({ op: 'change', outcome: 'success' });

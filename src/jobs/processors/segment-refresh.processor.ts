@@ -105,6 +105,10 @@ export class SegmentRefreshProcessor {
     // Handle event:* fields — value after "event:" is the raw eventName stored in DB
     if (field.startsWith('event:')) {
       const eventName = field.slice('event:'.length);
+      // Reject wildcards that would corrupt ILIKE matching (analogous to PROP_KEY_RE guard)
+      if (!/^[a-zA-Z0-9_:.-]{1,200}$/.test(eventName)) {
+        throw new Error(`Invalid event name in segment filter: ${JSON.stringify(eventName)}`);
+      }
       return this.buildEventCondition(eventName, operator, value);
     }
 
@@ -173,6 +177,10 @@ export class SegmentRefreshProcessor {
   }
 
   private buildPropertiesCondition(propKey: string, operator: string, value: string | number | undefined): SQL | undefined {
+    const PROP_KEY_RE = /^[a-zA-Z0-9_]{1,64}$/;
+    if (!PROP_KEY_RE.test(propKey)) {
+      throw new Error(`Invalid property key: ${propKey}`);
+    }
     switch (operator) {
       case 'equals':
         return sql`${contacts.properties}->>${propKey} = ${String(value)}`;

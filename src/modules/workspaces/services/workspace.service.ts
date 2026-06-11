@@ -211,7 +211,7 @@ export class WorkspaceService {
     }
 
     await this.audit.record({
-      action: 'workspace.member.added', // use workspace.* — falls back to generic action; refine later
+      action: 'workspace.updated',
       actorUserId: actor.user.id,
       workspaceId,
       targetType: 'workspace',
@@ -220,7 +220,6 @@ export class WorkspaceService {
       userAgent: actor.userAgent,
       requestId: actor.requestId,
       metadata: {
-        kind: 'workspace.updated',
         changedFields: Object.keys(patch),
         prevVersion: body.version,
       },
@@ -306,7 +305,7 @@ export class WorkspaceService {
     });
 
     await this.audit.record({
-      action: 'workspace.member.added',
+      action: 'workspace.settings.updated',
       actorUserId: actor.user.id,
       workspaceId,
       targetType: 'workspace_settings',
@@ -314,7 +313,7 @@ export class WorkspaceService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
       requestId: actor.requestId,
-      metadata: { kind: 'workspace.settings.updated', fields: Object.keys(body) },
+      metadata: { fields: Object.keys(body) },
     });
 
     return updated;
@@ -400,7 +399,7 @@ export class WorkspaceService {
     await this.rbac.invalidate(workspaceId, target.userId);
 
     await this.audit.record({
-      action: 'workspace.member.added',
+      action: 'workspace.member.role_changed',
       actorUserId: actor.user.id,
       workspaceId,
       targetType: 'membership',
@@ -409,7 +408,6 @@ export class WorkspaceService {
       userAgent: actor.userAgent,
       requestId: actor.requestId,
       metadata: {
-        kind: 'workspace.member.role_changed',
         targetUserId: target.userId,
         from: target.roleSlug,
         to: newRole,
@@ -531,7 +529,7 @@ export class WorkspaceService {
     await this.rbac.invalidate(workspaceId, newOwnerUserId);
 
     await this.audit.record({
-      action: 'workspace.member.added',
+      action: 'workspace.ownership_transferred',
       actorUserId: actor.user.id,
       workspaceId,
       targetType: 'workspace',
@@ -540,7 +538,6 @@ export class WorkspaceService {
       userAgent: actor.userAgent,
       requestId: actor.requestId,
       metadata: {
-        kind: 'workspace.ownership_transferred',
         from: actor.user.id,
         to: newOwnerUserId,
       },
@@ -573,7 +570,7 @@ export class WorkspaceService {
     await this.rbac.invalidateWorkspace(workspaceId);
 
     await this.audit.record({
-      action: 'workspace.member.added',
+      action: 'workspace.deactivated',
       actorUserId: actor.user.id,
       workspaceId,
       targetType: 'workspace',
@@ -581,7 +578,6 @@ export class WorkspaceService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
       requestId: actor.requestId,
-      metadata: { kind: 'workspace.deactivated' },
     });
 
     return updated;
@@ -611,7 +607,7 @@ export class WorkspaceService {
     await this.rbac.invalidateWorkspace(workspaceId);
 
     await this.audit.record({
-      action: 'workspace.member.added',
+      action: 'workspace.reactivated',
       actorUserId: actor.user.id,
       workspaceId,
       targetType: 'workspace',
@@ -619,7 +615,6 @@ export class WorkspaceService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
       requestId: actor.requestId,
-      metadata: { kind: 'workspace.reactivated' },
     });
 
     return updated;

@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   acceptInviteBodySchema,
+  changePasswordBodySchema,
   forgotPasswordBodySchema,
   inviteBodySchema,
   loginBodySchema,
@@ -9,6 +10,7 @@ import {
   resetPasswordBodySchema,
   revokeSessionParamsSchema,
   signupBodySchema,
+  updateProfileBodySchema,
   verifyEmailBodySchema,
 } from '../schemas/auth.schema.js';
 import {
@@ -134,7 +136,7 @@ export const authController = {
     if (!req.authedUser) {
       throw new UnauthorizedError();
     }
-    const body = req.body as { firstName?: string; lastName?: string };
+    const body = updateProfileBodySchema.parse(req.body);
     if (!body.firstName && !body.lastName) {
       throw new ValidationError('At least one field required');
     }
@@ -146,7 +148,7 @@ export const authController = {
     if (!req.authedUser) {
       throw new UnauthorizedError();
     }
-    const body = req.body as { currentPassword: string; newPassword: string };
+    const body = changePasswordBodySchema.parse(req.body);
     await req.server.services.auth.changePassword(
       req.authedUser.id,
       body.currentPassword,

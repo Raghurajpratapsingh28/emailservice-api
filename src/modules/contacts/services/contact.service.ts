@@ -288,11 +288,22 @@ export class ContactService {
   public async suppressContact(
     workspaceId: string,
     id: string,
-    _actor: ActorContext,
+    actor: ActorContext,
   ): Promise<ContactWithTags> {
     const updated = await this.repo.update(workspaceId, id, { emailSuppressed: true });
     if (!updated) throw new NotFoundError('Contact not found', 'CONTACT_NOT_FOUND');
     this.log.info({ contactId: id, workspaceId }, 'contact suppressed');
+    await this.audit.record({
+      action: 'contact.suppressed',
+      actorUserId: actor.user.id,
+      workspaceId,
+      targetType: 'contact',
+      targetId: id,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      success: true,
+      metadata: { emailSuppressed: true },
+    }).catch(() => undefined);
     const tags = await this.repo.getTagsForContact(id);
     return { ...updated, tags };
   }
@@ -300,11 +311,22 @@ export class ContactService {
   public async unsuppressContact(
     workspaceId: string,
     id: string,
-    _actor: ActorContext,
+    actor: ActorContext,
   ): Promise<ContactWithTags> {
     const updated = await this.repo.update(workspaceId, id, { emailSuppressed: false });
     if (!updated) throw new NotFoundError('Contact not found', 'CONTACT_NOT_FOUND');
     this.log.info({ contactId: id, workspaceId }, 'contact unsuppressed');
+    await this.audit.record({
+      action: 'contact.unsuppressed',
+      actorUserId: actor.user.id,
+      workspaceId,
+      targetType: 'contact',
+      targetId: id,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      success: true,
+      metadata: { emailSuppressed: false },
+    }).catch(() => undefined);
     const tags = await this.repo.getTagsForContact(id);
     return { ...updated, tags };
   }

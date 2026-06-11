@@ -27,13 +27,15 @@ export interface RateLimitRule {
   max: number;
   /** Window length in seconds. */
   windowSeconds: number;
+  /** When true, reject requests if Redis is unreachable rather than allowing through. Use for auth-critical endpoints. */
+  failClosed?: boolean;
 }
 
 export function createRateLimitMiddleware(
   redis: Redis,
   rule: RateLimitRule,
 ): preHandlerHookHandler {
-  const { bucket, keys, max, windowSeconds } = rule;
+  const { bucket, keys, max, windowSeconds, failClosed = false } = rule;
 
   return async function rateLimit(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const derived = keys(req).filter((k): k is string => typeof k === 'string' && k.length > 0);
@@ -49,7 +51,10 @@ export function createRateLimitMiddleware(
     }
     const results = await pipe.exec();
     if (!results) {
-      // Redis unreachable — fail open with a warning rather than locking everyone out.
+      if (failClosed) {
+        req.log.error({ bucket }, '[rate-limit] redis unreachable — rejecting request (fail-closed)');
+        throw new TooManyRequestsError('Rate limiter unavailable');
+      }
       req.log.warn({ bucket }, '[rate-limit] redis pipeline empty');
       return;
     }
@@ -98,6 +103,7 @@ export const AuthRateLimitRules = {
         keys: (req) => [req.ip],
         max: opts.perIpMax,
         windowSeconds: opts.windowSeconds,
+        failClosed: true,
       }),
       createRateLimitMiddleware(redis, {
         bucket: 'login:email',
@@ -108,6 +114,7 @@ export const AuthRateLimitRules = {
         },
         max: opts.perEmailMax,
         windowSeconds: opts.windowSeconds,
+        failClosed: true,
       }),
     ];
   },
@@ -119,6 +126,7 @@ export const AuthRateLimitRules = {
         keys: (req) => [req.ip],
         max: opts.perIpMax,
         windowSeconds: opts.windowSeconds,
+        failClosed: true,
       }),
       createRateLimitMiddleware(redis, {
         bucket: 'forgot:email',
@@ -129,6 +137,7 @@ export const AuthRateLimitRules = {
         },
         max: opts.perEmailMax,
         windowSeconds: opts.windowSeconds,
+        failClosed: true,
       }),
     ];
   },
@@ -151,6 +160,21 @@ export const AuthRateLimitRules = {
         keys: (req) => [req.ip],
         max: opts.perIpMax,
         windowSeconds: opts.windowSeconds,
+      }),
+    ];
+  },
+
+  changePassword(redis: Redis, opts: { perUserMax: number; windowSeconds: number }) {
+    return [
+      createRateLimitMiddleware(redis, {
+        bucket: 'change-password:user',
+        keys: (req) => {
+          const userId = (req as FastifyRequest & { authedUser?: { id: string } }).authedUser?.id;
+          return userId ? [userId] : [];
+        },
+        max: opts.perUserMax,
+        windowSeconds: opts.windowSeconds,
+        failClosed: true,
       }),
     ];
   },

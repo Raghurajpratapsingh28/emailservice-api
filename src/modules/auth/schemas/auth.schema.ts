@@ -68,6 +68,18 @@ export const acceptInviteBodySchema = z.object({
 });
 export type AcceptInviteBody = z.infer<typeof acceptInviteBodySchema>;
 
+export const updateProfileBodySchema = z.object({
+  firstName: z.string().trim().min(1).max(100).optional(),
+  lastName: z.string().trim().min(1).max(100).optional(),
+}).strict();
+export type UpdateProfileBody = z.infer<typeof updateProfileBodySchema>;
+
+export const changePasswordBodySchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: passwordSchema,
+}).strict();
+export type ChangePasswordBody = z.infer<typeof changePasswordBodySchema>;
+
 export const revokeSessionParamsSchema = z.object({
   sessionId: uuidSchema,
 });

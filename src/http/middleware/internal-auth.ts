@@ -12,8 +12,7 @@ import { timingSafeEqualString } from '@shared/utils/crypto.js';
  */
 export async function internalAuth(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const fromHeader = req.headers['x-internal-key'];
-  const fromQuery = (req.query as Record<string, string | undefined>)['key'];
-  const presented = typeof fromHeader === 'string' ? fromHeader : (fromQuery ?? '');
+  const presented = typeof fromHeader === 'string' ? fromHeader : '';
 
   if (!presented) {
     throw new UnauthorizedError('Missing internal credentials', 'INTERNAL_AUTH_REQUIRED');
