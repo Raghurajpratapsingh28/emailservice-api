@@ -32,7 +32,7 @@ import {
 } from '@observability/auth-metrics.js';
 import type { Database } from '@shared/database/client.js';
 import type { TokensResponse } from '@shared/types/index.js';
-import type { EmailPublisher } from '@shared/email/ses.js';
+import type { SystemEmailSender } from '@shared/email/ses-mailer.js';
 import type { NatsClient } from '@shared/queue/nats.js';
 import { PLAN_LIMITS } from '@constants/plan-limits.js';
 import type { BillingService } from '@modules/billing/services/billing.service.js';
@@ -95,7 +95,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly rbac: RbacService,
     private readonly nats: NatsClient,
-    private readonly email: EmailPublisher,
+    private readonly email: SystemEmailSender,
     private readonly billing: BillingService,
   ) {}
 

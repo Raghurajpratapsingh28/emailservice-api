@@ -3,11 +3,12 @@ import { NATS_SUBJECTS } from '@constants/nats-subjects.js';
 import type { NatsClient } from '@shared/queue/nats.js';
 
 /**
- * Email publisher. We don't call SES directly from the API — we publish a NATS
- * event, and a downstream worker (transactional service) handles delivery. This
- * keeps the request path fast and decouples retries.
+ * Email publisher for customer-facing transactional sends.
  *
- * The interface is small so it can be mocked in tests via the plugin.
+ * Publishes to the NATS worker pipeline (email.send.transactional).
+ * The worker handles SES delivery, retries, and delivery events.
+ *
+ * NOT used for system/auth emails — those go direct via ses-mailer.ts.
  */
 
 export interface EmailMessage {

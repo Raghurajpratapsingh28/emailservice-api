@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '@config/index.js';
 import { authController } from './controllers/auth.controller.js';
+import { authenticate } from '@http/middleware/authenticate.js';
 import { requirePermissions } from '@http/middleware/rbac.js';
 import { AuthRateLimitRules } from '@http/middleware/rate-limit.js';
 import { PERMISSIONS } from '@constants/rbac.js';
@@ -88,10 +89,22 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     authController.verifyEmail,
   );
 
+  // Optional auth: populates req.authedUser if a valid Bearer token is present,
+  // but silently skips so unauthenticated new users can still reach the handler.
+  const optionalAuthenticate = async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply): Promise<void> => {
+    if (req.headers.authorization?.startsWith('Bearer ')) {
+      try {
+        await authenticate(req, reply);
+      } catch {
+        // Token absent or invalid — proceed unauthenticated.
+      }
+    }
+  };
+
   app.post(
     '/accept-invite',
     {
-      preHandler: forgotLimit,
+      preHandler: [...forgotLimit, optionalAuthenticate],
       schema: { tags: ['auth'], summary: 'Accept a workspace invitation' },
     },
     authController.acceptInvite,

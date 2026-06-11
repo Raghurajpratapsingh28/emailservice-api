@@ -116,7 +116,7 @@ export default fp(
     const sesIdentity = createSesIdentityClient();
     const domains = new DomainService(app.db, domainRepo, sesIdentity, audit, app.nats, app.log, billing);
 
-    const auth = new AuthService(app.db, tokens, passwords, audit, rbac, app.nats, app.email, billing);
+    const auth = new AuthService(app.db, tokens, passwords, audit, rbac, app.nats, app.systemEmail, billing);
 
     const transactional = new TransactionalService(
       app.db,
