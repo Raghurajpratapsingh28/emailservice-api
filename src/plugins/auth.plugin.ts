@@ -33,6 +33,7 @@ import { StripeWebhookHandler } from '@modules/billing/stripe-webhook.handler.js
 import { createStripeClient, createStripeStub } from '@shared/payments/stripe.js';
 import { ApiKeyRepository } from '@modules/api-keys/repositories/api-key.repository.js';
 import { ApiKeyService } from '@modules/api-keys/services/api-key.service.js';
+import { AnalyticsService } from '@modules/analytics/services/analytics.service.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -54,6 +55,7 @@ declare module 'fastify' {
       billing: BillingService;
       stripeWebhook: StripeWebhookHandler;
       apiKeys: ApiKeyService;
+      analytics: AnalyticsService;
     };
   }
 }
@@ -146,6 +148,8 @@ export default fp(
     const apiKeyRepo = new ApiKeyRepository(app.db);
     const apiKeys = new ApiKeyService(apiKeyRepo, audit, app.log, billing);
 
+    const analytics = new AnalyticsService(app.db, app.redis, billing);
+
     const subscriber = app.redis.duplicate();
     await rbac.startInvalidationListener(subscriber);
 
@@ -167,6 +171,7 @@ export default fp(
       billing,
       stripeWebhook,
       apiKeys,
+      analytics,
     });
 
     app.addHook('onClose', async () => {
