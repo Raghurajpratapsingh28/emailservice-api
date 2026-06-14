@@ -9,8 +9,8 @@ import {
 } from '@constants/plan-limits.js';
 
 describe('plan-limits', () => {
-  it('defines all four billing plans', () => {
-    expect(BILLING_PLANS).toEqual(['free', 'starter', 'growth', 'pro']);
+  it('defines all five billing plans', () => {
+    expect(BILLING_PLANS).toEqual(['free', 'starter', 'growth', 'pro', 'scale']);
   });
 
   it('defines monthly and yearly intervals', () => {
@@ -33,12 +33,14 @@ describe('plan-limits', () => {
     expect(PLAN_QUOTAS.starter.contacts).toBeGreaterThan(PLAN_QUOTAS.free.contacts);
     expect(PLAN_QUOTAS.growth.contacts).toBeGreaterThan(PLAN_QUOTAS.starter.contacts);
     expect(PLAN_QUOTAS.pro.contacts).toBeGreaterThan(PLAN_QUOTAS.growth.contacts);
+    expect(PLAN_QUOTAS.scale.contacts).toBeGreaterThan(PLAN_QUOTAS.pro.contacts);
   });
 
   it('PLAN_RANK orders plans correctly', () => {
     expect(PLAN_RANK.free).toBeLessThan(PLAN_RANK.starter);
     expect(PLAN_RANK.starter).toBeLessThan(PLAN_RANK.growth);
     expect(PLAN_RANK.growth).toBeLessThan(PLAN_RANK.pro);
+    expect(PLAN_RANK.pro).toBeLessThan(PLAN_RANK.scale);
   });
 
   it('quotasForPlan falls back to free for unknown plans', () => {

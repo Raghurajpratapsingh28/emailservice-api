@@ -42,7 +42,7 @@ export class StripeWebhookHandler {
     private readonly redis: Redis,
     private readonly audit: AuditService,
     private readonly log: FastifyBaseLogger,
-  ) {}
+  ) { }
 
   /**
    * Verify and dispatch a webhook payload.

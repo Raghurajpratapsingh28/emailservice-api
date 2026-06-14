@@ -83,9 +83,17 @@ export class WorkspaceService {
     const plan = input.plan ?? 'free';
 
     const result = await this.db.transaction(async (tx) => {
-      const slug = input.slug
-        ? await this.ensureSlugUnique(tx, input.slug)
-        : await this.generateUniqueSlug(tx, input.name);
+      let slug: string;
+      if (input.slug) {
+        const taken = await this.repo.slugExists(tx, input.slug);
+        if (!taken) {
+          slug = input.slug;
+        } else {
+          slug = await this.generateUniqueSlug(tx, input.name);
+        }
+      } else {
+        slug = await this.generateUniqueSlug(tx, input.name);
+      }
 
       const ws = await this.repo.insertWorkspace(tx, {
         name: input.name.trim(),
@@ -633,14 +641,6 @@ export class WorkspaceService {
         ws.status === 'deleted' ? 'WORKSPACE_DELETED' : 'WORKSPACE_INACTIVE',
       );
     }
-  }
-
-  private async ensureSlugUnique(tx: Tx, slug: string): Promise<string> {
-    const exists = await this.repo.slugExists(tx, slug);
-    if (exists) {
-      throw new ConflictError('Slug already taken', 'SLUG_TAKEN');
-    }
-    return slug;
   }
 
   private async generateUniqueSlug(tx: Tx, name: string): Promise<string> {

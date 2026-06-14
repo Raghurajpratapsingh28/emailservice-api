@@ -65,7 +65,7 @@ export class BillingService {
     private readonly redis: Redis,
     private readonly audit: AuditService,
     private readonly log: FastifyBaseLogger,
-  ) {}
+  ) { }
 
   // ─── Checkout ─────────────────────────────────────────────────────────────
 

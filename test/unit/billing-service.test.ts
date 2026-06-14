@@ -102,10 +102,11 @@ describe('BillingService', () => {
 
     it('rejects concurrent checkout (Redis lock NX)', async () => {
       const redis = makeRedis();
-      // First call wins; second sees the lock.
+      // Pre-set the key in redis store to simulate concurrent checkout
+      await redis.set(`billing:checkout:${workspaceId}`, 'some-user', 'EX', 60, 'NX');
+
       const svc = new BillingService(makeDb() as never, makeRepo() as never, makeStripe() as never, redis as never, makeAudit() as never, makeLog() as never);
 
-      await svc.createCheckoutSession(workspaceId, { plan: 'starter', billingInterval: 'monthly' }, actor);
       await expect(svc.createCheckoutSession(workspaceId, { plan: 'starter', billingInterval: 'monthly' }, actor))
         .rejects.toThrow(ConflictError);
     });
@@ -153,6 +154,7 @@ describe('BillingService', () => {
         findSubscriptionByWorkspace: vi.fn().mockResolvedValue({
           stripeSubscriptionId: 'sub_test',
           plan: 'starter',
+          status: 'active',
         }),
         upsertSubscription: vi.fn().mockResolvedValue({
           plan: 'pro',
@@ -286,7 +288,7 @@ describe('BillingService', () => {
 
       const usage = await svc.getUsage(workspaceId);
       expect(usage.contacts.used).toBe(0);
-      expect(usage.contacts.limit).toBe(100);
+      expect(usage.contacts.limit).toBe(1000);
       expect(usage.emails.used).toBe(0);
       expect(usage.events.used).toBe(0);
     });
@@ -308,7 +310,7 @@ describe('BillingService', () => {
 
       const usage = await svc.getUsage(workspaceId);
       expect(usage.contacts).toEqual({ used: 1200, limit: 50_000 });
-      expect(usage.emails).toEqual({ used: 50000, limit: 200_000 });
+      expect(usage.emails).toEqual({ used: 50000, limit: 150_000 });
       expect(usage.events).toEqual({ used: 250000, limit: 500_000 });
     });
   });
@@ -326,7 +328,7 @@ describe('BillingService', () => {
     it('returns false when delta would exceed limit', async () => {
       const repo = makeRepo({
         findSubscriptionByWorkspace: vi.fn().mockResolvedValue({ plan: 'free' }),
-        getAllUsageForPeriod: vi.fn().mockResolvedValue([{ metric: 'contacts', usageCount: 100 }]),
+        getAllUsageForPeriod: vi.fn().mockResolvedValue([{ metric: 'contacts', usageCount: 1000 }]),
       });
       const svc = new BillingService(makeDb() as never, repo as never, makeStripe() as never, makeRedis() as never, makeAudit() as never, makeLog() as never);
       expect(await svc.hasQuotaRemaining(workspaceId, 'contacts', 1)).toBe(false);

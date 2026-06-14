@@ -68,6 +68,10 @@ const PRICE_ID_MAP: Record<BillingPlan, Record<BillingInterval, string | undefin
     monthly: config.STRIPE_PRO_MONTHLY_PRICE_ID,
     yearly: config.STRIPE_PRO_YEARLY_PRICE_ID,
   },
+  scale: {
+    monthly: config.STRIPE_SCALE_MONTHLY_PRICE_ID,
+    yearly: config.STRIPE_SCALE_YEARLY_PRICE_ID,
+  },
 };
 
 export class StripeNotConfiguredError extends AppError {

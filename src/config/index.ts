@@ -91,6 +91,8 @@ const envSchema = z.object({
   STRIPE_GROWTH_YEARLY_PRICE_ID: z.string().optional(),
   STRIPE_PRO_MONTHLY_PRICE_ID: z.string().optional(),
   STRIPE_PRO_YEARLY_PRICE_ID: z.string().optional(),
+  STRIPE_SCALE_MONTHLY_PRICE_ID: z.string().optional(),
+  STRIPE_SCALE_YEARLY_PRICE_ID: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {

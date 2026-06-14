@@ -85,6 +85,15 @@ export default async function billingRoutes(app: FastifyInstance): Promise<void>
     },
     billingController.changePlan,
   );
+
+  // ─── Public pricing endpoint (no auth) ─────────────────────────────────────
+  app.get(
+    '/plans',
+    {
+      schema: { tags: ['billing'], summary: 'List available plans and pricing (public)' },
+    },
+    billingController.listPlans,
+  );
 }
 
 /**

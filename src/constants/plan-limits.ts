@@ -8,7 +8,7 @@
  * handler on subscription state changes).
  */
 
-export const BILLING_PLANS = ['free', 'starter', 'growth', 'pro'] as const;
+export const BILLING_PLANS = ['free', 'starter', 'growth', 'pro', 'scale'] as const;
 export type BillingPlan = (typeof BILLING_PLANS)[number];
 
 export const BILLING_INTERVALS = ['monthly', 'yearly'] as const;
@@ -23,24 +23,29 @@ export type QuotaMetric = (typeof QUOTA_METRICS)[number];
  */
 export const PLAN_QUOTAS: Record<BillingPlan, Record<QuotaMetric, number>> = {
   free: {
-    contacts: 100,
-    emails: 500,
-    events: 1_000,
+    contacts: 1_000,
+    emails: 3_000,
+    events: 5_000,
   },
   starter: {
-    contacts: 5_000,
-    emails: 20_000,
-    events: 50_000,
+    contacts: 10_000,
+    emails: 25_000,
+    events: 100_000,
   },
   growth: {
     contacts: 50_000,
-    emails: 200_000,
+    emails: 150_000,
     events: 500_000,
   },
   pro: {
+    contacts: 150_000,
+    emails: 500_000,
+    events: 2_000_000,
+  },
+  scale: {
     contacts: 500_000,
     emails: 2_000_000,
-    events: 5_000_000,
+    events: 10_000_000,
   },
 } as const;
 
@@ -50,24 +55,29 @@ export const PLAN_QUOTAS: Record<BillingPlan, Record<QuotaMetric, number>> = {
  */
 export const PLAN_LIMITS = {
   free: {
-    maxMembers: 3,
+    maxMembers: 1,
     maxContacts: PLAN_QUOTAS.free.contacts,
     maxCampaignsPerMonth: 5,
   },
   starter: {
-    maxMembers: 10,
+    maxMembers: 5,
     maxContacts: PLAN_QUOTAS.starter.contacts,
     maxCampaignsPerMonth: 50,
   },
   growth: {
-    maxMembers: 25,
+    maxMembers: 15,
     maxContacts: PLAN_QUOTAS.growth.contacts,
     maxCampaignsPerMonth: 200,
   },
   pro: {
-    maxMembers: 100,
+    maxMembers: 50,
     maxContacts: PLAN_QUOTAS.pro.contacts,
-    maxCampaignsPerMonth: 1_000,
+    maxCampaignsPerMonth: 500,
+  },
+  scale: {
+    maxMembers: 200,
+    maxContacts: PLAN_QUOTAS.scale.contacts,
+    maxCampaignsPerMonth: 2_000,
   },
   enterprise: {
     maxMembers: Number.POSITIVE_INFINITY,
@@ -83,29 +93,61 @@ export const RESOURCE_LIMITS = {
     maxDomains: 1,
     maxSegments: 3,
     maxWorkflows: 1,
-    maxApiKeys: 2,
+    maxApiKeys: 1,
     maxEmailTemplates: 5,
+    maxWebhooks: 0,
+    hasApiAccess: false,
+    hasCustomDomains: true,
+    hasAdvancedAnalytics: false,
+    removeBranding: false,
   },
   starter: {
     maxDomains: 3,
     maxSegments: 20,
-    maxWorkflows: 5,
+    maxWorkflows: 10,
     maxApiKeys: 5,
-    maxEmailTemplates: 20,
+    maxEmailTemplates: 30,
+    maxWebhooks: 0,
+    hasApiAccess: false,
+    hasCustomDomains: true,
+    hasAdvancedAnalytics: false,
+    removeBranding: true,
   },
   growth: {
     maxDomains: 10,
     maxSegments: 100,
-    maxWorkflows: 20,
+    maxWorkflows: 50,
     maxApiKeys: 20,
-    maxEmailTemplates: 100,
+    maxEmailTemplates: 200,
+    maxWebhooks: 10,
+    hasApiAccess: true,
+    hasCustomDomains: true,
+    hasAdvancedAnalytics: true,
+    removeBranding: true,
   },
   pro: {
+    maxDomains: 50,
+    maxSegments: 500,
+    maxWorkflows: 200,
+    maxApiKeys: 50,
+    maxEmailTemplates: 1_000,
+    maxWebhooks: 50,
+    hasApiAccess: true,
+    hasCustomDomains: true,
+    hasAdvancedAnalytics: true,
+    removeBranding: true,
+  },
+  scale: {
     maxDomains: Number.POSITIVE_INFINITY,
     maxSegments: Number.POSITIVE_INFINITY,
     maxWorkflows: Number.POSITIVE_INFINITY,
     maxApiKeys: Number.POSITIVE_INFINITY,
     maxEmailTemplates: Number.POSITIVE_INFINITY,
+    maxWebhooks: Number.POSITIVE_INFINITY,
+    hasApiAccess: true,
+    hasCustomDomains: true,
+    hasAdvancedAnalytics: true,
+    removeBranding: true,
   },
   enterprise: {
     maxDomains: Number.POSITIVE_INFINITY,
@@ -113,6 +155,11 @@ export const RESOURCE_LIMITS = {
     maxWorkflows: Number.POSITIVE_INFINITY,
     maxApiKeys: Number.POSITIVE_INFINITY,
     maxEmailTemplates: Number.POSITIVE_INFINITY,
+    maxWebhooks: Number.POSITIVE_INFINITY,
+    hasApiAccess: true,
+    hasCustomDomains: true,
+    hasAdvancedAnalytics: true,
+    removeBranding: true,
   },
 } as const;
 
@@ -137,7 +184,8 @@ export const PLAN_RANK: Record<PlanTier, number> = {
   starter: 1,
   growth: 2,
   pro: 3,
-  enterprise: 4,
+  scale: 4,
+  enterprise: 5,
 };
 
 /** Resolve quotas for a plan; falls back to free if unknown. */

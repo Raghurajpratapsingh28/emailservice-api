@@ -1,6 +1,13 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ForbiddenError, UnauthorizedError, ValidationError } from '@shared/errors/app-errors.js';
 import {
+  PLAN_QUOTAS,
+  PLAN_LIMITS,
+  RESOURCE_LIMITS,
+  BILLING_PLANS,
+  type BillingPlan,
+} from '@constants/plan-limits.js';
+import {
   changePlanBodySchema,
   createCheckoutBodySchema,
   listInvoicesQuerySchema,
@@ -129,5 +136,73 @@ export const billingController = {
     }
     const result = await req.server.services.stripeWebhook.handle(rawBody, signature);
     return reply.status(200).send(result);
+  },
+
+  // GET /api/v1/billing/plans — public, no auth required.
+  async listPlans(_req: FastifyRequest, reply: FastifyReply) {
+    const PLAN_PRICING: Record<BillingPlan, { monthly: number; yearly: number }> = {
+      free: { monthly: 0, yearly: 0 },
+      starter: { monthly: 12, yearly: 120 },
+      growth: { monthly: 39, yearly: 390 },
+      pro: { monthly: 99, yearly: 990 },
+      scale: { monthly: 249, yearly: 2490 },
+    };
+
+    const PLAN_FEATURES: Record<BillingPlan, string[]> = {
+      free: [
+        '1,000 contacts',
+        '3,000 emails/month',
+        'Basic automation',
+        '1 custom domain',
+        'Mailvex branding',
+      ],
+      starter: [
+        '10,000 contacts',
+        '25,000 emails/month',
+        'Automation workflows',
+        'Segments',
+        'Custom domains',
+        'No branding',
+      ],
+      growth: [
+        '50,000 contacts',
+        '150,000 emails/month',
+        'Advanced workflows',
+        'API access',
+        'Webhooks',
+        'Analytics',
+      ],
+      pro: [
+        '150,000 contacts',
+        '500,000 emails/month',
+        'Priority support',
+        'Team members',
+        'Advanced permissions',
+      ],
+      scale: [
+        '500,000 contacts',
+        '2,000,000 emails/month',
+        'Dedicated onboarding',
+        'SLA',
+        'Premium support',
+      ],
+    };
+
+    const plans = BILLING_PLANS.map((planId) => ({
+      id: planId,
+      name: planId.charAt(0).toUpperCase() + planId.slice(1),
+      pricing: PLAN_PRICING[planId],
+      quotas: PLAN_QUOTAS[planId],
+      limits: PLAN_LIMITS[planId as keyof typeof PLAN_LIMITS] ?? PLAN_LIMITS.free,
+      resources: RESOURCE_LIMITS[planId as keyof typeof RESOURCE_LIMITS] ?? RESOURCE_LIMITS.free,
+      features: PLAN_FEATURES[planId],
+      isFree: planId === 'free',
+      isPopular: planId === 'growth',
+    }));
+
+    return reply
+      .header('cache-control', 'public, max-age=3600, s-maxage=86400')
+      .status(200)
+      .send({ plans });
   },
 };

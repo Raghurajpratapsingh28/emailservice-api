@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BILLING_INTERVALS, BILLING_PLANS } from '@constants/plan-limits.js';
 
 /** Plans available for purchase via Checkout. `free` is excluded. */
-const PURCHASABLE_PLANS = BILLING_PLANS.filter((p) => p !== 'free') as ['starter', 'growth', 'pro'];
+const PURCHASABLE_PLANS = BILLING_PLANS.filter((p) => p !== 'free') as ['starter', 'growth', 'pro', 'scale'];
 
 export const createCheckoutBodySchema = z.object({
   plan: z.enum(PURCHASABLE_PLANS),
