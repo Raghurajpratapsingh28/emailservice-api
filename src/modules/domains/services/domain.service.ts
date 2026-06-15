@@ -146,6 +146,15 @@ export class DomainService {
     let identityArn: string | undefined;
 
     try {
+      // Purge any pre-existing SES identity before creating a fresh one. This
+      // prevents a new workspace from inheriting a previously-verified identity
+      // left behind by another account (or a failed prior delete), which would
+      // let them bypass DNS verification entirely.
+      const existingIdentity = await this.ses.getIdentity(domain);
+      if (existingIdentity.exists) {
+        await this.ses.deleteIdentity(domain);
+      }
+
       const sesResult = await this.ses.createDomainIdentity(domain);
       dkimTokens = sesResult.dkimTokens;
       identityArn = sesResult.identityArn;

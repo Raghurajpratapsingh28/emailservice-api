@@ -21,6 +21,7 @@ import type { NatsClient } from '@shared/queue/nats.js';
 import type { AuthenticatedUser } from '@shared/types/index.js';
 import type { AuditService } from '@modules/auth/services/audit.service.js';
 import type { BillingService } from '@modules/billing/services/billing.service.js';
+import { injectBrandingFooter } from '@shared/email/branding.js';
 import type { IdempotencyCache } from '@shared/cache/idempotency.js';
 import type { TransactionalRepository } from '../repositories/transactional.repository.js';
 import type {
@@ -146,6 +147,12 @@ export class TransactionalService {
 
     // 1d. Materialize template (if any)
     const materialized = await this.materialize(workspaceId, body);
+
+    // 1d-ii. Inject Mailvex footer for free-plan workspaces
+    const sub = await this.billing.getSubscription(workspaceId);
+    if (materialized.html) {
+      materialized.html = injectBrandingFooter(materialized.html, sub.plan);
+    }
 
     // 1e. Persist DB record + publish queue inside a single txn boundary
     const primary = body.to[0]!;

@@ -23,6 +23,7 @@ import type { AuditService } from '@modules/auth/services/audit.service.js';
 import type { BillingService } from '@modules/billing/services/billing.service.js';
 import type { CampaignRepository } from '../repositories/campaign.repository.js';
 import { PLAN_LIMITS } from '@constants/plan-limits.js';
+import { injectBrandingFooter } from '@shared/email/branding.js';
 import type {
   CreateCampaignBody,
   ListCampaignsQuery,
@@ -440,6 +441,10 @@ export class CampaignService {
     }
 
     // Build the LOCKED queue payload
+    const outboundHtml = transitioning.htmlBody
+      ? injectBrandingFooter(transitioning.htmlBody, plan)
+      : undefined;
+
     const payload: CampaignQueuePayload = {
       jobId: randomUUID(),
       workspaceId,
@@ -451,7 +456,7 @@ export class CampaignService {
       },
       ...(transitioning.replyTo ? { replyTo: transitioning.replyTo } : {}),
       subject: transitioning.subject!,
-      ...(transitioning.htmlBody ? { html: transitioning.htmlBody } : {}),
+      ...(outboundHtml ? { html: outboundHtml } : {}),
       ...(transitioning.textBody ? { text: transitioning.textBody } : {}),
     };
 
