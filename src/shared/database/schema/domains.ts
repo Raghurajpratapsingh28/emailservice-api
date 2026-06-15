@@ -45,8 +45,16 @@ export const domains = pgTable(
     sesIdentity: varchar({ length: 253 }).notNull(),
     sesIdentityArn: varchar({ length: 512 }),
     status: varchar({ length: 16 }).notNull().default('pending'),
-    /** DKIM token list returned by SES. Used to render DNS records on demand. */
+    /** DKIM token list returned by SES (Easy DKIM legacy). Used to render DNS records on demand. */
     dkimTokens: jsonb().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * BYODKIM selector — unique per workspace/domain registration. Makes the
+     * DKIM DNS record (`<selector>._domainkey.<domain>`) unique so a previous
+     * owner's published records can never auto-verify a new registration.
+     */
+    dkimSelector: varchar({ length: 63 }),
+    /** BYODKIM public key (base64, no PEM headers) for the TXT record value. */
+    dkimPublicKey: varchar({ length: 1024 }),
     verificationStartedAt: timestamp({ withTimezone: true }),
     verifiedAt: timestamp({ withTimezone: true }),
     lastVerificationCheckAt: timestamp({ withTimezone: true }),

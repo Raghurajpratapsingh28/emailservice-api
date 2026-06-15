@@ -153,6 +153,8 @@ export class DomainRepository {
         Domain,
         | 'status'
         | 'dkimTokens'
+        | 'dkimSelector'
+        | 'dkimPublicKey'
         | 'sesIdentityArn'
         | 'verificationStartedAt'
         | 'verifiedAt'

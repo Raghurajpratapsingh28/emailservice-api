@@ -22,12 +22,20 @@ function makeSesMock(opts: Partial<SesIdentityClient> = {}): SesIdentityClient {
       verificationStatus: 'PENDING',
       dkimStatus: 'PENDING',
     })),
+    createDomainIdentityByoDkim: vi.fn(async () => ({
+      identityArn: 'arn:aws:ses:us-east-1:123:identity/acme.com',
+      selector: 'eiqtest123',
+      publicKeyBase64: 'PUBKEYBASE64',
+      verificationStatus: 'PENDING',
+      dkimStatus: 'PENDING',
+    })),
     getIdentity: vi.fn(async () => ({
       exists: false,
       dkimTokens: [],
     })),
     deleteIdentity: vi.fn(async () => undefined),
     enableEasyDkim: vi.fn(async () => undefined),
+    rotateDkim: vi.fn(async () => ['rot1', 'rot2', 'rot3']),
     ...opts,
   };
 }
@@ -49,6 +57,13 @@ function makeAuditMock(): AuditService {
   return { record: vi.fn(async () => undefined) } as unknown as AuditService;
 }
 
+// Billing mock — returns a plan with no domain quota cap so createDomain proceeds.
+function makeBillingMock() {
+  return {
+    getSubscription: vi.fn(async () => ({ plan: 'free' })),
+  } as never;
+}
+
 // We don't need a real DB for service unit tests — only DnsRecords path.
 const fakeDb = {} as unknown as Database;
 const fakeRepo = {} as unknown as DomainRepository;
@@ -61,10 +76,14 @@ describe('DomainService.buildDnsRecords', () => {
     makeAuditMock(),
     makeNatsMock(),
     noopLogger,
+    makeBillingMock(),
   );
 
-  it('produces SPF, DKIM CNAMEs, and DMARC', () => {
-    const dns = svc.buildDnsRecords('acme.com', ['t1', 't2', 't3']);
+  it('produces SPF, a BYODKIM TXT record, and DMARC', () => {
+    const dns = svc.buildDnsRecords('acme.com', {
+      dkimSelector: 'eiqabc123',
+      dkimPublicKey: 'PUBKEYBASE64',
+    });
 
     expect(dns.spf).toEqual({
       type: 'TXT',
@@ -72,11 +91,11 @@ describe('DomainService.buildDnsRecords', () => {
       value: 'v=spf1 include:amazonses.com ~all',
     });
 
-    expect(dns.dkim).toHaveLength(3);
+    expect(dns.dkim).toHaveLength(1);
     expect(dns.dkim[0]).toEqual({
-      type: 'CNAME',
-      host: 't1._domainkey.acme.com',
-      value: 't1.dkim.amazonses.com',
+      type: 'TXT',
+      host: 'eiqabc123._domainkey.acme.com',
+      value: 'v=DKIM1; k=rsa; p=PUBKEYBASE64',
     });
 
     expect(dns.dmarc.type).toBe('TXT');
@@ -85,8 +104,18 @@ describe('DomainService.buildDnsRecords', () => {
     expect(dns.dmarc.value).toContain('p=none'); // monitoring mode
   });
 
-  it('returns zero DKIM records when SES has not provisioned tokens yet', () => {
-    const dns = svc.buildDnsRecords('acme.com', []);
+  it('falls back to legacy Easy DKIM CNAMEs when no BYODKIM selector', () => {
+    const dns = svc.buildDnsRecords('acme.com', { dkimTokens: ['t1', 't2', 't3'] });
+    expect(dns.dkim).toHaveLength(3);
+    expect(dns.dkim[0]).toEqual({
+      type: 'CNAME',
+      host: 't1._domainkey.acme.com',
+      value: 't1.dkim.amazonses.com',
+    });
+  });
+
+  it('returns zero DKIM records when nothing has been provisioned yet', () => {
+    const dns = svc.buildDnsRecords('acme.com', {});
     expect(dns.dkim).toEqual([]);
     expect(dns.spf.value).toBeTruthy();
     expect(dns.dmarc.value).toBeTruthy();
@@ -97,6 +126,8 @@ describe('DomainService.createDomain — SES failure rollback', () => {
   let repoCalls: { method: string; args: unknown[] }[] = [];
   const trackingRepo = {
     findByDomain: vi.fn(async () => null),
+    countByWorkspace: vi.fn(async () => 0),
+    isClaimedByAnotherWorkspace: vi.fn(async () => false),
     insert: vi.fn(async (_tx: unknown, values: unknown) => {
       repoCalls.push({ method: 'insert', args: [values] });
       return {
@@ -133,14 +164,14 @@ describe('DomainService.createDomain — SES failure rollback', () => {
     vi.clearAllMocks();
   });
 
-  it('rolls back DB row when SES createDomainIdentity throws', async () => {
+  it('rolls back DB row when SES createDomainIdentityByoDkim throws', async () => {
     const ses = makeSesMock({
-      createDomainIdentity: vi.fn(async () => {
+      createDomainIdentityByoDkim: vi.fn(async () => {
         throw new Error('boom');
       }),
     });
     const nats = makeNatsMock();
-    const svc = new DomainService(txDb, trackingRepo, ses, makeAuditMock(), nats, noopLogger);
+    const svc = new DomainService(txDb, trackingRepo, ses, makeAuditMock(), nats, noopLogger, makeBillingMock());
 
     await expect(
       svc.createDomain('w1', 'acme.com', {

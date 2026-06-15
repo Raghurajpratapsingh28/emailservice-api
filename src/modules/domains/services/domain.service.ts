@@ -50,7 +50,8 @@ export interface DnsSpfRecord {
 }
 
 export interface DnsDkimRecord {
-  type: 'CNAME';
+  // BYODKIM publishes a TXT record holding the public key (Easy DKIM used CNAMEs).
+  type: 'TXT' | 'CNAME';
   host: string;
   value: string;
 }
@@ -142,27 +143,26 @@ export class DomainService {
       verificationStartedAt: new Date(),
     });
 
-    let dkimTokens: string[] = [];
     let identityArn: string | undefined;
+    let dkimSelector: string | undefined;
+    let dkimPublicKey: string | undefined;
 
     try {
-      // Purge any pre-existing SES identity before creating a fresh one. This
-      // prevents a new workspace from inheriting a previously-verified identity
-      // left behind by another account (or a failed prior delete), which would
-      // let them bypass DNS verification entirely.
+      // Always delete any pre-existing SES identity before creating a fresh one.
+      // Combined with BYODKIM below, this guarantees a clean, unverified identity.
       const existingIdentity = await this.ses.getIdentity(domain);
       if (existingIdentity.exists) {
         await this.ses.deleteIdentity(domain);
       }
 
-      const sesResult = await this.ses.createDomainIdentity(domain);
-      dkimTokens = sesResult.dkimTokens;
+      // Use BYODKIM: a freshly generated keypair + unique selector. The DKIM DNS
+      // record is `<selector>._domainkey.<domain>`, and since the selector is
+      // unique per registration, records published by a previous owner of this
+      // domain can never satisfy verification — so SES cannot auto-verify it.
+      const sesResult = await this.ses.createDomainIdentityByoDkim(domain);
       identityArn = sesResult.identityArn;
-      // Make sure Easy DKIM signing is enabled (idempotent).
-      await this.ses.enableEasyDkim(domain).catch((err) => {
-        this.logger.warn({ err, domain }, '[domains] enableEasyDkim failed — continuing');
-        domainsSesFailuresTotal.inc({ op: 'dkim' });
-      });
+      dkimSelector = sesResult.selector;
+      dkimPublicKey = sesResult.publicKeyBase64;
     } catch (err) {
       // Rollback: hard-delete the DB row so the workspace can retry cleanly.
       await this.db.transaction(async (tx) => {
@@ -180,10 +180,12 @@ export class DomainService {
       );
     }
 
-    // Step 4: persist DKIM tokens + advance status to verifying.
+    // Step 4: persist BYODKIM selector/public key + advance status to verifying.
     const updated = await this.repo.updateWithVersion(workspaceId, created.id, created.version, {
       status: 'verifying',
-      dkimTokens,
+      dkimTokens: [],
+      dkimSelector: dkimSelector ?? null,
+      dkimPublicKey: dkimPublicKey ?? null,
       sesIdentityArn: identityArn ?? null,
       verificationAttempts: 0,
     });
@@ -196,12 +198,8 @@ export class DomainService {
       throw new InternalServerError('Domain post-insert update failed');
     }
 
-    // Step 5: enqueue verification poll
-    this.publishEvent(NATS_SUBJECTS.DOMAIN_VERIFY_POLL, {
-      domainId: updated.id,
-      workspaceId,
-      domain,
-    });
+    // Step 5: notify that domain was created (no immediate verify poll —
+    // the user must click "Start Verification" after publishing DNS records).
     this.publishEvent(NATS_SUBJECTS.DOMAIN_CREATED, {
       domainId: updated.id,
       workspaceId,
@@ -218,7 +216,7 @@ export class DomainService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
       requestId: actor.requestId,
-      metadata: { kind: 'domain.created', domain, dkimTokenCount: dkimTokens.length },
+      metadata: { kind: 'domain.created', domain, dkimSelector: dkimSelector ?? null },
     });
 
     return this.toView(updated);
@@ -384,18 +382,35 @@ export class DomainService {
 
   // ─── DNS record generation ────────────────────────────────────────────────
 
-  public buildDnsRecords(domain: string, dkimTokens: string[]): DnsRecords {
+  public buildDnsRecords(
+    domain: string,
+    opts: { dkimSelector?: string | null; dkimPublicKey?: string | null; dkimTokens?: string[] } = {},
+  ): DnsRecords {
+    let dkim: DnsDkimRecord[];
+    if (opts.dkimSelector && opts.dkimPublicKey) {
+      // BYODKIM: single TXT record holding the public key.
+      dkim = [
+        {
+          type: 'TXT',
+          host: `${opts.dkimSelector}._domainkey.${domain}`,
+          value: `v=DKIM1; k=rsa; p=${opts.dkimPublicKey}`,
+        },
+      ];
+    } else {
+      // Legacy Easy DKIM CNAME records (for rows created before BYODKIM).
+      dkim = (opts.dkimTokens ?? []).map((token) => ({
+        type: 'CNAME' as const,
+        host: `${token}._domainkey.${domain}`,
+        value: `${token}.dkim.amazonses.com`,
+      }));
+    }
     return {
       spf: {
         type: 'TXT',
         host: '@',
         value: 'v=spf1 include:amazonses.com ~all',
       },
-      dkim: dkimTokens.map((token) => ({
-        type: 'CNAME' as const,
-        host: `${token}._domainkey.${domain}`,
-        value: `${token}.dkim.amazonses.com`,
-      })),
+      dkim,
       dmarc: {
         type: 'TXT',
         host: `_dmarc.${domain}`,
@@ -411,7 +426,11 @@ export class DomainService {
     const tokens = Array.isArray(row.dkimTokens) ? (row.dkimTokens as string[]) : [];
     return {
       ...row,
-      dns: this.buildDnsRecords(row.domain, tokens),
+      dns: this.buildDnsRecords(row.domain, {
+        dkimSelector: row.dkimSelector,
+        dkimPublicKey: row.dkimPublicKey,
+        dkimTokens: tokens,
+      }),
     };
   }
 
