@@ -1,7 +1,7 @@
 {
-  "name": "engageiq-api",
+  "name": "Mailvex-api",
   "version": "1.0.0",
-  "description": "EngageIQ API - Production SaaS platform",
+  "description": "Mailvex API - Production SaaS platform",
   "type": "module",
   "main": "dist/app/server.js",
   "engines": {
@@ -23,7 +23,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx database/seeds/index.ts",
-    "db:seed:prod": "node dist/database/seeds/index.js",
+    "db:seed:prod": "node dist/scripts/seed.js",
     "db:setup": "tsx scripts/migrate.ts && tsx database/seeds/index.ts"
   },
   "dependencies": {
